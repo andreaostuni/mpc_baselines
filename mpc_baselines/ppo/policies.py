@@ -50,6 +50,11 @@ class MPCActorCriticPolicy(BasePolicy):
     :param observation_space: Observation space
     :param action_space: Action space
     :param lr_schedule: Learning rate schedule (could be constant)
+    :param mpc_state_dim: Dimension of the MPC state
+    :param mpc_horizon: Horizon of the MPC
+    :param dynamics: Dynamics model
+    :param lqr_iter: Number of iterations for the LQR controller
+    :param u_init: Initial action sequence
     :param net_arch: The specification of the policy and value networks.
     :param activation_fn: Activation function
     :param ortho_init: Whether to use or not orthogonal initialization
@@ -104,11 +109,13 @@ class MPCActorCriticPolicy(BasePolicy):
             # Small values to avoid NaN in Adam optimizer
             if optimizer_class == th.optim.Adam:
                 optimizer_kwargs["eps"] = 1e-5
+        
         self.mpc_state_dim = mpc_state_dim
         self.mpc_horizon = mpc_horizon
         self.lqr_iter = lqr_iter
         self.u_init = u_init
         self.dynamics = dynamics
+
         super().__init__(
             observation_space,
             action_space,
@@ -140,7 +147,6 @@ class MPCActorCriticPolicy(BasePolicy):
         self.net_arch = net_arch
         self.activation_fn = activation_fn
         self.ortho_init = ortho_init
-
 
         self.share_features_extractor = share_features_extractor
         self.features_extractor = self.make_features_extractor()
@@ -196,7 +202,7 @@ class MPCActorCriticPolicy(BasePolicy):
             dict(
                 net_arch=self.net_arch,
                 activation_fn=self.activation_fn,
-                use_sde=self.use_sde,
+                # use_sde=self.use_sde,
                 log_std_init=self.log_std_init,
                 squash_output=default_none_kwargs["squash_output"],
                 full_std=default_none_kwargs["full_std"],
@@ -207,6 +213,11 @@ class MPCActorCriticPolicy(BasePolicy):
                 optimizer_kwargs=self.optimizer_kwargs,
                 features_extractor_class=self.features_extractor_class,
                 features_extractor_kwargs=self.features_extractor_kwargs,
+                mpc_state_dim = self.mpc_state_dim,
+                mpc_horizon = self.mpc_horizon,
+                lqr_iter = self.lqr_iter,
+                u_init = self.u_init,
+                dynamics = self.dynamics 
             )
         )
         return data
@@ -250,7 +261,7 @@ class MPCActorCriticPolicy(BasePolicy):
             self.action_cost_net, self.log_std = self.action_dist.proba_distribution_net(
                 latent_dim=latent_dim_pi, log_std_init=self.log_std_init
             )
-        
+        # TODO: add support for more distributions
         else:
             raise NotImplementedError(f"Unsupported distribution '{self.action_dist}'.")
 
@@ -305,29 +316,29 @@ class MPCActorCriticPolicy(BasePolicy):
         actions = actions.reshape((-1, *self.action_space.shape))  # type: ignore[misc]
         return actions, values, log_prob
 
-    # def extract_features(  # type: ignore[override]
-    #     self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
-    # ) -> Union[th.Tensor, Tuple[th.Tensor, th.Tensor]]:
-    #     """
-    #     Preprocess the observation if needed and extract features.
+    def extract_features(  # type: ignore[override]
+        self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> Union[th.Tensor, Tuple[th.Tensor, th.Tensor]]:
+        """
+        Preprocess the observation if needed and extract features.
 
-    #     :param obs: Observation
-    #     :param features_extractor: The features extractor to use. If None, then ``self.features_extractor`` is used.
-    #     :return: The extracted features. If features extractor is not shared, returns a tuple with the
-    #         features for the actor and the features for the critic.
-    #     """
-    #     if self.share_features_extractor:
-    #         return super().extract_features(obs, self.features_extractor if features_extractor is None else features_extractor)
-    #     else:
-    #         if features_extractor is not None:
-    #             warnings.warn(
-    #                 "Provided features_extractor will be ignored because the features extractor is not shared.",
-    #                 UserWarning,
-    #             )
+        :param obs: Observation
+        :param features_extractor: The features extractor to use. If None, then ``self.features_extractor`` is used.
+        :return: The extracted features. If features extractor is not shared, returns a tuple with the
+            features for the actor and the features for the critic.
+        """
+        if self.share_features_extractor:
+            return super().extract_features(obs, self.features_extractor if features_extractor is None else features_extractor)
+        else:
+            if features_extractor is not None:
+                warnings.warn(
+                    "Provided features_extractor will be ignored because the features extractor is not shared.",
+                    UserWarning,
+                )
 
-    #         pi_features = super().extract_features(obs, self.pi_features_extractor)
-    #         vf_features = super().extract_features(obs, self.vf_features_extractor)
-    #         return pi_features, vf_features
+            pi_features = super().extract_features(obs, self.pi_features_extractor)
+            vf_features = super().extract_features(obs, self.vf_features_extractor)
+            return pi_features, vf_features
 
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor) -> Distribution:
         """
@@ -402,7 +413,7 @@ class MPCActorCriticPolicy(BasePolicy):
         return self.value_net(latent_vf)
 
 
-class ActorCriticCnnPolicy(ActorCriticPolicy):
+class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):
     """
     CNN policy class for actor-critic algorithms (has both policy and value prediction).
     Used by A2C, PPO and the likes.
@@ -410,6 +421,11 @@ class ActorCriticCnnPolicy(ActorCriticPolicy):
     :param observation_space: Observation space
     :param action_space: Action space
     :param lr_schedule: Learning rate schedule (could be constant)
+    :param mpc_state_dim: Dimension of the MPC state
+    :param mpc_horizon: Horizon of the MPC
+    :param dynamics: Dynamics model
+    :param lqr_iter: Number of iterations for the LQR controller
+    :param u_init: Initial action sequence
     :param net_arch: The specification of the policy and value networks.
     :param activation_fn: Activation function
     :param ortho_init: Whether to use or not orthogonal initialization
@@ -439,6 +455,11 @@ class ActorCriticCnnPolicy(ActorCriticPolicy):
         observation_space: spaces.Space,
         action_space: spaces.Space,
         lr_schedule: Schedule,
+        mpc_state_dim: int,
+        mpc_horizon: int,
+        dynamics: Union[LinDx, nn.Module],
+        lqr_iter: int = 10,
+        u_init: Optional[th.Tensor] = None, # Time x Batch x Action
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -458,6 +479,11 @@ class ActorCriticCnnPolicy(ActorCriticPolicy):
             observation_space,
             action_space,
             lr_schedule,
+            mpc_state_dim,
+            mpc_horizon,
+            dynamics,
+            lqr_iter,
+            u_init,
             net_arch,
             activation_fn,
             ortho_init,
@@ -475,7 +501,7 @@ class ActorCriticCnnPolicy(ActorCriticPolicy):
         )
 
 
-class MultiInputActorCriticPolicy(ActorCriticPolicy):
+class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
     """
     MultiInputActorClass policy class for actor-critic algorithms (has both policy and value prediction).
     Used by A2C, PPO and the likes.
@@ -512,6 +538,11 @@ class MultiInputActorCriticPolicy(ActorCriticPolicy):
         observation_space: spaces.Dict,
         action_space: spaces.Space,
         lr_schedule: Schedule,
+        mpc_state_dim: int,
+        mpc_horizon: int,
+        dynamics: Union[LinDx, nn.Module],
+        lqr_iter: int = 10,
+        u_init: Optional[th.Tensor] = None, # Time x Batch x Action
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -531,6 +562,11 @@ class MultiInputActorCriticPolicy(ActorCriticPolicy):
             observation_space,
             action_space,
             lr_schedule,
+            mpc_state_dim,
+            mpc_horizon,
+            dynamics,
+            lqr_iter,
+            u_init,
             net_arch,
             activation_fn,
             ortho_init,
@@ -546,81 +582,3 @@ class MultiInputActorCriticPolicy(ActorCriticPolicy):
             optimizer_class,
             optimizer_kwargs,
         )
-
-
-class ContinuousCritic(BaseModel):
-    """
-    Critic network(s) for DDPG/SAC/TD3.
-    It represents the action-state value function (Q-value function).
-    Compared to A2C/PPO critics, this one represents the Q-value
-    and takes the continuous action as input. It is concatenated with the state
-    and then fed to the network which outputs a single value: Q(s, a).
-    For more recent algorithms like SAC/TD3, multiple networks
-    are created to give different estimates.
-
-    By default, it creates two critic networks used to reduce overestimation
-    thanks to clipped Q-learning (cf TD3 paper).
-
-    :param observation_space: Observation space
-    :param action_space: Action space
-    :param net_arch: Network architecture
-    :param features_extractor: Network to extract features
-        (a CNN when using images, a nn.Flatten() layer otherwise)
-    :param features_dim: Number of features
-    :param activation_fn: Activation function
-    :param normalize_images: Whether to normalize images or not,
-         dividing by 255.0 (True by default)
-    :param n_critics: Number of critic networks to create.
-    :param share_features_extractor: Whether the features extractor is shared or not
-        between the actor and the critic (this saves computation time)
-    """
-
-    features_extractor: BaseFeaturesExtractor
-
-    def __init__(
-        self,
-        observation_space: spaces.Space,
-        action_space: spaces.Box,
-        net_arch: List[int],
-        features_extractor: BaseFeaturesExtractor,
-        features_dim: int,
-        activation_fn: Type[nn.Module] = nn.ReLU,
-        normalize_images: bool = True,
-        n_critics: int = 2,
-        share_features_extractor: bool = True,
-    ):
-        super().__init__(
-            observation_space,
-            action_space,
-            features_extractor=features_extractor,
-            normalize_images=normalize_images,
-        )
-
-        action_dim = get_action_dim(self.action_space)
-
-        self.share_features_extractor = share_features_extractor
-        self.n_critics = n_critics
-        self.q_networks: List[nn.Module] = []
-        for idx in range(n_critics):
-            q_net_list = create_mlp(features_dim + action_dim, 1, net_arch, activation_fn)
-            q_net = nn.Sequential(*q_net_list)
-            self.add_module(f"qf{idx}", q_net)
-            self.q_networks.append(q_net)
-
-    def forward(self, obs: th.Tensor, actions: th.Tensor) -> Tuple[th.Tensor, ...]:
-        # Learn the features extractor using the policy loss only
-        # when the features_extractor is shared with the actor
-        with th.set_grad_enabled(not self.share_features_extractor):
-            features = self.extract_features(obs, self.features_extractor)
-        qvalue_input = th.cat([features, actions], dim=1)
-        return tuple(q_net(qvalue_input) for q_net in self.q_networks)
-
-    def q1_forward(self, obs: th.Tensor, actions: th.Tensor) -> th.Tensor:
-        """
-        Only predict the Q-value using the first network.
-        This allows to reduce computation when all the estimates are not needed
-        (e.g. when updating the policy in TD3).
-        """
-        with th.no_grad():
-            features = self.extract_features(obs, self.features_extractor)
-        return self.q_networks[0](th.cat([features, actions], dim=1))
