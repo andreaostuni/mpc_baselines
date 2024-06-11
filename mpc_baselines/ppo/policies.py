@@ -6,7 +6,7 @@ import warnings
 from abc import ABC, abstractmethod
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
-from mpc.mpc import MPC, LinDx, QuadCost
+from mpc.mpc import MPC, LinDx, QuadCost, GradMethods
 
 import numpy as np
 import torch as th
@@ -35,7 +35,7 @@ from stable_baselines3.common.torch_layers import (
 from stable_baselines3.common.type_aliases import PyTorchObs, Schedule
 from stable_baselines3.common.utils import get_device, is_vectorized_observation, obs_as_tensor
 
-from mpc_baselines.mpc_baselines.common.utils import get_q_p_from_tensor
+from mpc_baselines.common.utils import get_q_p_from_tensor
 
 SelfBaseModel = TypeVar("SelfBaseModel", bound="BaseModel")
 
@@ -114,7 +114,6 @@ class MPCActorCriticPolicy(BasePolicy):
         self.mpc_horizon = mpc_horizon
         self.lqr_iter = lqr_iter
         self.u_init = u_init
-        self.dynamics = dynamics
 
         super().__init__(
             observation_space,
@@ -147,6 +146,7 @@ class MPCActorCriticPolicy(BasePolicy):
         self.net_arch = net_arch
         self.activation_fn = activation_fn
         self.ortho_init = ortho_init
+        self.dynamics = dynamics
 
         self.share_features_extractor = share_features_extractor
         self.features_extractor = self.make_features_extractor()
@@ -166,10 +166,13 @@ class MPCActorCriticPolicy(BasePolicy):
             self.mpc_state_dim,
             self.mpc_action_dim,
             self.mpc_horizon,
-            u_lower=action_space.low,
-            u_upper=action_space.high,
+            u_lower=th.tensor(action_space.low),
+            u_upper=th.tensor(action_space.high),
             lqr_iter=self.lqr_iter,
             u_init=self.u_init,
+            exit_unconverged=False,
+            detach_unconverged=False,
+            grad_method=GradMethods.AUTO_DIFF,
         )
 
         self.mpc_state = th.zeros(1, self.mpc_state_dim)
@@ -185,7 +188,10 @@ class MPCActorCriticPolicy(BasePolicy):
         #     }
 
         # self.use_sde = use_sde
-        dist_kwargs =  {'mpc_horizon': mpc_horizon }
+        dist_kwargs =  {
+            'mpc_state_dim': mpc_state_dim,
+            'mpc_horizon': mpc_horizon
+            }
         self.dist_kwargs = dist_kwargs
 
         # Action distribution
@@ -348,9 +354,15 @@ class MPCActorCriticPolicy(BasePolicy):
         :return: Action distribution
         """
         QP = self.action_cost_net(latent_pi)
+        print(f'QP: {QP}')
         Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
+        print(f'Q: {Q} p: {p}')
+        print(f'Q: {Q.shape}, p: {p.shape}')
+        print(f'mpc_state: {self.mpc_state}')
+
         mean_actions = self.mpc_controller(self.mpc_state, QuadCost(Q, p), self.dynamics)
 
+        print(f'mean_actions: {mean_actions}')
         if isinstance(self.action_dist, MPCDiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
         else:

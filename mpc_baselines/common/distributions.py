@@ -24,18 +24,21 @@ SelfMPCSquashedDiagGaussianDistribution = TypeVar(
 
 import stable_baselines3.common.distributions as sb3_distributions 
 
-class MPCDiagGaussianDistribution(sb3_distributions.DiagGaussianDistribution):
+class MPCDiagGaussianDistribution(sb3_distributions.Distribution):
     """
     Gaussian distribution with diagonal covariance matrix, for continuous actions.
 
     :param action_dim:  Dimension of the action space.
+    :param mpc_horizon:  MPC horizon.
+
     """
 
-    def __init__(self, action_dim: int, mpc_horizon: int):
+    def __init__(self, action_dim: int, mpc_state_dim: int, mpc_horizon: int):
         super().__init__()
         self.action_dim = action_dim
+        self.mpc_state_dim = mpc_state_dim
+        self.mpc_horizon = mpc_horizon
         self.mean_actions = None
-        self.mpc_horizon = None
         self.log_std = None
 
     def proba_distribution_net(self, latent_dim: int, log_std_init: float = 0.0) -> Tuple[nn.Module, nn.Parameter]:
@@ -48,7 +51,7 @@ class MPCDiagGaussianDistribution(sb3_distributions.DiagGaussianDistribution):
         :param log_std_init: Initial value for the log standard deviation
         :return:
         """
-        QP = nn.Linear(latent_dim, 2* self.action_dim * self.mpc_horizon)
+        QP = nn.Linear(latent_dim, 2* (self.action_dim + self.mpc_state_dim) * self.mpc_horizon)
         # TODO: allow action dependent std
         log_std = nn.Parameter(th.ones(self.action_dim) * log_std_init, requires_grad=True)
         return QP, log_std
@@ -186,29 +189,29 @@ def make_proba_distribution(
         sb3_distributions.make_proba_distribution(action_space, use_sde, dist_kwargs)
 
 
-def kl_divergence(dist_true: sb3_distributions.Distribution, dist_pred: sb3_distributions.Distribution) -> th.Tensor:
-    """
-    Wrapper for the PyTorch implementation of the full form KL Divergence
+# def kl_divergence(dist_true: sb3_distributions.Distribution, dist_pred: sb3_distributions.Distribution) -> th.Tensor:
+#     """
+#     Wrapper for the PyTorch implementation of the full form KL Divergence
 
-    :param dist_true: the p distribution
-    :param dist_pred: the q distribution
-    :return: KL(dist_true||dist_pred)
-    """
-    # KL Divergence for different distribution types is out of scope
-    assert dist_true.__class__ == dist_pred.__class__, "Error: input distributions should be the same type"
+#     :param dist_true: the p distribution
+#     :param dist_pred: the q distribution
+#     :return: KL(dist_true||dist_pred)
+#     """
+#     # KL Divergence for different distribution types is out of scope
+#     assert dist_true.__class__ == dist_pred.__class__, "Error: input distributions should be the same type"
 
-    # MultiCategoricalDistribution is not a PyTorch Distribution subclass
-    # so we need to implement it ourselves!
-    if isinstance(dist_pred, MultiCategoricalDistribution):
-        assert isinstance(dist_true, MultiCategoricalDistribution)  # already checked above, for mypy
-        assert np.allclose(
-            dist_pred.action_dims, dist_true.action_dims
-        ), f"Error: distributions must have the same input space: {dist_pred.action_dims} != {dist_true.action_dims}"
-        return th.stack(
-            [th.distributions.kl_divergence(p, q) for p, q in zip(dist_true.distribution, dist_pred.distribution)],
-            dim=1,
-        ).sum(dim=1)
+#     # MultiCategoricalDistribution is not a PyTorch Distribution subclass
+#     # so we need to implement it ourselves!
+#     if isinstance(dist_pred, MultiCategoricalDistribution):
+#         assert isinstance(dist_true, MultiCategoricalDistribution)  # already checked above, for mypy
+#         assert np.allclose(
+#             dist_pred.action_dims, dist_true.action_dims
+#         ), f"Error: distributions must have the same input space: {dist_pred.action_dims} != {dist_true.action_dims}"
+#         return th.stack(
+#             [th.distributions.kl_divergence(p, q) for p, q in zip(dist_true.distribution, dist_pred.distribution)],
+#             dim=1,
+#         ).sum(dim=1)
 
-    # Use the PyTorch kl_divergence implementation
-    else:
-        return th.distributions.kl_divergence(dist_true.distribution, dist_pred.distribution)
+#     # Use the PyTorch kl_divergence implementation
+#     else:
+#         return th.distributions.kl_divergence(dist_true.distribution, dist_pred.distribution)
