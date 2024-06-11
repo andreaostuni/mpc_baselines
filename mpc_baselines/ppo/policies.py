@@ -582,3 +582,7 @@ class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
             optimizer_class,
             optimizer_kwargs,
         )
+
+MPCMlpPolicy = MPCActorCriticPolicy
+MPCCnnPolicy = MPCActorCriticCnnPolicy
+MPCMultiInputPolicy = MPCMultiInputActorCriticPolicy
