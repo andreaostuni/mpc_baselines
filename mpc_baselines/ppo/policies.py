@@ -163,11 +163,11 @@ class MPCActorCriticPolicy(BasePolicy):
         dist_kwargs = None
         self.mpc_action_dim = action_space.shape[0]
 
-        print(f'device: {self.device}')
+        # print(f'device: {self.device}')
         self.mpc_state = np.random.rand(1, self.mpc_state_dim).astype(np.float32)
         
         print(f'mpc_state: {self.mpc_state}')
-        print(f'device: {get_device(self.device)}')
+        # print(f'device: {get_device(self.device)}')
 
         # assert not (squash_output and not use_sde), "squash_output=True is only available when using gSDE (use_sde=True)"
         # Keyword arguments for gSDE distribution
@@ -237,7 +237,7 @@ class MPCActorCriticPolicy(BasePolicy):
         # Note: If net_arch is None and some features extractor is used,
         #       net_arch here is an empty list and mlp_extractor does not
         #       really contain any layers (acts like an identity module).
-        print(f'self.device: {self.device} mlp')
+        # print(f'self.device: {self.device} mlp')
         self.mlp_extractor = MlpExtractor(
             self.features_dim,
             net_arch=self.net_arch,
@@ -254,8 +254,8 @@ class MPCActorCriticPolicy(BasePolicy):
             self.mpc_action_dim,
             self.mpc_horizon,
             eps=1e-2,
-            u_lower=th.tensor(action_space.low),
-            u_upper=th.tensor(action_space.high),
+            u_lower=th.tensor(action_space.low, device=self.device),
+            u_upper=th.tensor(action_space.high, device=self.device),
             lqr_iter=self.lqr_iter,
             u_init=self.u_init,
             exit_unconverged=False,
@@ -263,7 +263,6 @@ class MPCActorCriticPolicy(BasePolicy):
             backprop=False,
             grad_method=GradMethods.AUTO_DIFF,
         ).to(get_device(self.device))
-        print(f'action_space.low: {action_space.low}')
 
     def _build(self, lr_schedule: Schedule, action_space: spaces.Space) -> None:
         """
@@ -369,18 +368,18 @@ class MPCActorCriticPolicy(BasePolicy):
         """
         QP = self.action_cost_net(latent_pi)
         QP.requires_grad_()
-        print(f'QP: {QP}')
+        # print(f'QP: {QP}')
         Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
-        print(f'Q: {Q} p: {p}')
-        print(f'Q: {Q.shape}, p: {p.shape}')
+        # print(f'Q: {Q} p: {p}')
+        # print(f'Q: {Q.shape}, p: {p.shape}')
         print(f'mpc_state: {self.mpc_state}')
         mpc_state_tensor = obs_as_tensor(self.mpc_state, self.device)
 
         nominal_states, nominal_actions, nominal_objs = self.mpc_controller(mpc_state_tensor, QuadCost(Q, p), self.dynamics)
         mean_actions = nominal_actions[0]
-        print(f'nominal_states: {nominal_states}')
+        # print(f'nominal_states: {nominal_states}')
         print(f'mean_actions: {mean_actions}')
-        print(f'nominal_objs: {nominal_objs}')
+        # print(f'nominal_objs: {nominal_objs}')
         if isinstance(self.action_dist, MPCDiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
         else:
@@ -448,8 +447,7 @@ class MPCActorCriticPolicy(BasePolicy):
 
         :param mpc_state: New MPC controller state
         """
-
-        self.mpc_state = obs_as_tensor(mpc_state.copy(), self.device)
+        self.mpc_state = mpc_state.copy()
 
 
 class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):

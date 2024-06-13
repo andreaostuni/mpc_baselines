@@ -68,9 +68,8 @@ class MPCUpdateCallback(BaseCallback):
         env = self.locals["env"]
         # Retrieve the MPC controller state from the environment
         mpc_state = env.get_attr("mpc_state") 
-        mpc_state = env.get_attr("mpc_state")
-        # Update the MPC controller
-        # print("Updating MPC on step")
-        # print(mpc_state)
-        self.model.update_mpc(mpc_state)
+        if isinstance(mpc_state, list):
+            self.model.policy.update_mpc(*mpc_state)
+        else:
+            self.model.policy.update_mpc(mpc_state)
         return True

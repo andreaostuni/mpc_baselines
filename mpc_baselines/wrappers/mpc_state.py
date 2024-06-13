@@ -31,4 +31,4 @@ class MPCStateWrapper(gym.Wrapper):
     
     @property
     def mpc_state(self) -> np.ndarray:
-        return self._get_mpc_state()
+        return self._get_mpc_state().astype(np.float32)
