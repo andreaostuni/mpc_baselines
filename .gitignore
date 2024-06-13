@@ -1,2 +1,3 @@
 build/*
-mpc_baselines.egg-info/* 
+mpc_baselines.egg-info/*
+*.pyc
