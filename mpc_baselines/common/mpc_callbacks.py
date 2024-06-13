@@ -8,6 +8,7 @@ import numpy as np
 
 from stable_baselines3.common.logger import Logger
 from stable_baselines3.common.callbacks import BaseCallback
+import torch as th
 
 
 try:
@@ -38,6 +39,23 @@ class MPCUpdateCallback(BaseCallback):
 
     def __init__(self, verbose: int = 0):
         super().__init__(verbose)
+
+    # def _on_rollout_start(self) -> None:
+    #     """
+    #     This method will be called by the model before each rollout starts.
+    #     It is meant to retrieve the mpc state from the environment and update the MPC controller before the rollout.
+    #     """
+        # print("Rollout start")
+        # print('globals')
+        # print(self.locals)
+        # Retrieve the current environment
+        # env = self.locals["env"]
+        # Retrieve the MPC controller state from the environment
+        # mpc_state = env.get_attr("mpc_state")
+        # Update the MPC controller
+        # print("Updating MPC")
+        # print(mpc_state)
+        # self.model.update_mpc(mpc_state)
         
 
     def _on_step(self) -> bool:
@@ -49,7 +67,10 @@ class MPCUpdateCallback(BaseCallback):
         # Retrieve the current environment
         env = self.locals["env"]
         # Retrieve the MPC controller state from the environment
+        mpc_state = env.get_attr("mpc_state") 
         mpc_state = env.get_attr("mpc_state")
         # Update the MPC controller
+        # print("Updating MPC on step")
+        # print(mpc_state)
         self.model.update_mpc(mpc_state)
         return True
