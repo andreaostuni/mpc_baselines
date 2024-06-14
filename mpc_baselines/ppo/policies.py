@@ -163,11 +163,8 @@ class MPCActorCriticPolicy(BasePolicy):
         dist_kwargs = None
         self.mpc_action_dim = action_space.shape[0]
 
-        # print(f'device: {self.device}')
-        self.mpc_state = np.random.rand(1, self.mpc_state_dim).astype(np.float32)
+        self.env_state = None
         
-        print(f'mpc_state: {self.mpc_state}')
-        # print(f'device: {get_device(self.device)}')
 
         # assert not (squash_output and not use_sde), "squash_output=True is only available when using gSDE (use_sde=True)"
         # Keyword arguments for gSDE distribution
@@ -368,18 +365,14 @@ class MPCActorCriticPolicy(BasePolicy):
         """
         QP = self.action_cost_net(latent_pi)
         QP.requires_grad_()
-        # print(f'QP: {QP}')
         Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
-        # print(f'Q: {Q} p: {p}')
-        # print(f'Q: {Q.shape}, p: {p.shape}')
         print(f'mpc_state: {self.mpc_state}')
+        print(f'env_state: {self.env_state}')
         mpc_state_tensor = obs_as_tensor(self.mpc_state, self.device)
 
         nominal_states, nominal_actions, nominal_objs = self.mpc_controller(mpc_state_tensor, QuadCost(Q, p), self.dynamics)
         mean_actions = nominal_actions[0]
-        # print(f'nominal_states: {nominal_states}')
         print(f'mean_actions: {mean_actions}')
-        # print(f'nominal_objs: {nominal_objs}')
         if isinstance(self.action_dist, MPCDiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
         else:
@@ -448,6 +441,14 @@ class MPCActorCriticPolicy(BasePolicy):
         :param mpc_state: New MPC controller state
         """
         self.mpc_state = mpc_state.copy()
+
+    def update_env_state(self, env_state: np.ndarray) -> None:
+        """
+        Update the environment state.
+
+        :param env_state: New environment state
+        """
+        self.env_state = env_state.copy()
 
 
 class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):

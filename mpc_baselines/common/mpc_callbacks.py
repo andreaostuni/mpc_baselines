@@ -40,22 +40,23 @@ class MPCUpdateCallback(BaseCallback):
     def __init__(self, verbose: int = 0):
         super().__init__(verbose)
 
-    # def _on_rollout_start(self) -> None:
-    #     """
-    #     This method will be called by the model before each rollout starts.
-    #     It is meant to retrieve the mpc state from the environment and update the MPC controller before the rollout.
-    #     """
-        # print("Rollout start")
-        # print('globals')
-        # print(self.locals)
+    def _on_rollout_start(self) -> None:
+        """
+        This method will be called by the model before each rollout starts.
+        It is meant to retrieve the mpc state from the environment and update the MPC controller before the rollout.
+        """
         # Retrieve the current environment
-        # env = self.locals["env"]
+        env = self.training_env
         # Retrieve the MPC controller state from the environment
-        # mpc_state = env.get_attr("mpc_state")
+        mpc_state = env.get_attr("mpc_state")
+        env_state = env.get_attr("state")
         # Update the MPC controller
-        # print("Updating MPC")
-        # print(mpc_state)
-        # self.model.update_mpc(mpc_state)
+        if isinstance(mpc_state, list):
+            self.model.policy.update_mpc(*mpc_state)
+            self.model.policy.update_env_state(*env_state)
+        else:
+            self.model.policy.update_mpc(mpc_state)
+            self.model.policy.update_env_state(env_state)
         
 
     def _on_step(self) -> bool:
@@ -65,11 +66,15 @@ class MPCUpdateCallback(BaseCallback):
         :return: (bool) If the callback returns False, training is aborted early.
         """
         # Retrieve the current environment
-        env = self.locals["env"]
+        env = self.training_env
         # Retrieve the MPC controller state from the environment
-        mpc_state = env.get_attr("mpc_state") 
+        mpc_state = env.get_attr("mpc_state")
+        env_state = env.get_attr("state")
+        
         if isinstance(mpc_state, list):
             self.model.policy.update_mpc(*mpc_state)
+            self.model.policy.update_env_state(*env_state)
         else:
             self.model.policy.update_mpc(mpc_state)
+            self.model.policy.update_env_state(env_state)
         return True
