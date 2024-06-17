@@ -158,6 +158,7 @@ class MPCActorCriticPolicy(BasePolicy):
         self.log_std_init = log_std_init
         dist_kwargs = None
         self.mpc_action_dim = action_space.shape[0]
+        
 
         assert not (squash_output and not use_sde), "squash_output=True is only available when using gSDE (use_sde=True)"
         # Keyword arguments for gSDE distribution
@@ -170,17 +171,23 @@ class MPCActorCriticPolicy(BasePolicy):
             }
 
         self.use_sde = use_sde
+        if dist_kwargs is None:
+            dist_kwargs = {}
 
-        dist_kwargs = dist_kwargs.update(
-            {"mpc_state_dim": self.mpc_state_dim,
-            "mpc_action_dim": self.mpc_action_dim}
+        print(f"'mpc_state_dim': {self.mpc_state_dim}")
+        print(f"'mpc_horizon': {self.mpc_horizon}")
+
+        dist_kwargs.update(
+            {"mpc_state_dim" : self.mpc_state_dim,
+             "mpc_horizon" : self.mpc_horizon}
             )
+        
         self.dist_kwargs = dist_kwargs
 
         # Action distribution
         self.action_dist = make_proba_distribution(action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
 
-        self._build(lr_schedule, action_space)
+        self._build(lr_schedule)
 
     def _get_constructor_parameters(self) -> Dict[str, Any]:
         data = super()._get_constructor_parameters()

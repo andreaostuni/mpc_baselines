@@ -62,8 +62,9 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
 
     def __init__(
         self,
-        policy: Union[str, Type[ActorCriticPolicy]],
+        policy: Union[str, Type[MPCActorCriticPolicy]],
         env: Union[GymEnv, str],
+        mpc_state_dim: int,
         learning_rate: Union[float, Schedule],
         n_steps: int,
         gamma: float,
@@ -103,6 +104,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         )
 
         self._last_mpc_state = None # type: Optional[np.ndarray]
+        self.mpc_state_dim = mpc_state_dim
         self.n_steps = n_steps
         self.gamma = gamma
         self.gae_lambda = gae_lambda
@@ -129,6 +131,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
             self.n_steps,
             self.observation_space,  # type: ignore[arg-type]
             self.action_space,
+            self.mpc_state_dim,
             device=self.device,
             gamma=self.gamma,
             gae_lambda=self.gae_lambda,
@@ -136,7 +139,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
             **self.rollout_buffer_kwargs,
         )
         self.policy = self.policy_class(  # type: ignore[assignment]
-            self.observation_space, self.action_space, self.lr_schedule, use_sde=self.use_sde, **self.policy_kwargs
+            self.observation_space, self.action_space, self.lr_schedule, self.mpc_state_dim, use_sde=self.use_sde, **self.policy_kwargs
         )
         self.policy = self.policy.to(self.device)
 
@@ -201,7 +204,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
                     clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
-            new_mpc_states = env.get_attr("mpc_state")
+            new_mpc_states = np.array(env.get_attr("mpc_state"))
 
             self.num_timesteps += env.num_envs
 
@@ -330,6 +333,8 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         callback.on_training_start(locals(), globals())
 
         assert self.env is not None
+        assert self.env.get_attr("mpc_state") is not None, "No MPC state was provided by the environment"
+        self._last_mpc_state = np.array(self.env.get_attr("mpc_state"))
 
         while self.num_timesteps < total_timesteps:
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)

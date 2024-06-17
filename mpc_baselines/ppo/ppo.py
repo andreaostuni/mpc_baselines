@@ -32,6 +32,7 @@ class MPCPPO(MPCOnPolicyAlgorithm):
 
     :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
     :param env: The environment to learn from (if registered in Gym, can be str)
+    :param mpc_state_dim: The dimension of the state space of the MPC model
     :param learning_rate: The learning rate, it can be a function
         of the current progress remaining (from 1 to 0)
     :param n_steps: The number of steps to run for each environment per update
@@ -85,6 +86,7 @@ class MPCPPO(MPCOnPolicyAlgorithm):
         self,
         policy: Union[str, Type[MPCActorCriticPolicy]],
         env: Union[GymEnv, str],
+        mpc_state_dim: int,
         learning_rate: Union[float, Schedule] = 3e-4,
         n_steps: int = 2048,
         batch_size: int = 64,
@@ -113,6 +115,7 @@ class MPCPPO(MPCOnPolicyAlgorithm):
         super().__init__(
             policy,
             env,
+            mpc_state_dim,
             learning_rate=learning_rate,
             n_steps=n_steps,
             gamma=gamma,
