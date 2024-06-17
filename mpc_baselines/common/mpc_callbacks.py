@@ -70,6 +70,7 @@ class MPCUpdateCallback(BaseCallback):
         # Retrieve the MPC controller state from the environment
         mpc_state = env.get_attr("mpc_state")
         env_state = env.get_attr("state")
+        print('time step', self.num_timesteps)
         
         if isinstance(mpc_state, list):
             self.model.policy.update_mpc(*mpc_state)

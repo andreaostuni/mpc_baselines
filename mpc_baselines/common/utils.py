@@ -26,6 +26,7 @@ from stable_baselines3.common.type_aliases import GymEnv, Schedule, TensorDict, 
 
 import stable_baselines3.common.utils as sb3_utils
 
+
 def get_q_p_from_tensor(tensor: th.Tensor, timestamps: int) -> Tuple[th.Tensor, th.Tensor]:
     """
     Get the Q and p values for the MPC optimization from the output of the model.
