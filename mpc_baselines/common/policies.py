@@ -163,6 +163,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         dynamics: Union[LinDx, nn.Module],
         lqr_iter: int = 5,
         u_init: Optional[th.Tensor] = None, # Time x Batch x Action
+        grad_method: Optional[GradMethods] = GradMethods.ANALYTIC,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -188,6 +189,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         self.mpc_horizon = mpc_horizon
         self.lqr_iter = lqr_iter
         self.u_init = u_init
+        self.grad_method = grad_method
 
         super().__init__(
             observation_space,
@@ -288,7 +290,8 @@ class MPCActorCriticPolicy(MPCBasePolicy):
                 mpc_horizon = self.mpc_horizon,
                 lqr_iter = self.lqr_iter,
                 u_init = self.u_init,
-                dynamics = self.dynamics 
+                dynamics = self.dynamics,
+                grad_method = self.grad_method
             )
         )
         return data
@@ -333,7 +336,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             exit_unconverged=False,
             detach_unconverged=False,
             backprop=False,
-            grad_method=GradMethods.AUTO_DIFF,
+            grad_method=self.grad_method,
         ).to(get_device(self.device))
 
     def _build(self, lr_schedule: Schedule) -> None:
