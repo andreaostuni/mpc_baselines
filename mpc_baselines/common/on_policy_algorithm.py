@@ -165,7 +165,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         """
         assert self._last_obs is not None, "No previous observation was provided"
         assert self._last_mpc_state is not None, "No previous MPC state was provided"
-        assert env.get_attr("mpc_state") is not None, "No MPC state was provided by the environment"
+        assert self.env.get_mpc_state() is not None, "No MPC state was provided by the environment, make sure the environment is wrapped with VecMPCStateWrapper"
 
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)
@@ -204,7 +204,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
                     clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
-            new_mpc_states = np.array(env.get_attr("mpc_state"))
+            new_mpc_states = self.env.get_mpc_state()
 
             self.num_timesteps += env.num_envs
 
@@ -290,13 +290,13 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
     def predict(
         self,
         observation: Union[np.ndarray, Dict[str, np.ndarray]],
-        mpc_state: Optional[np.ndarray] = None,
+        mpc_state: np.ndarray,
         state: Optional[Tuple[np.ndarray, ...]] = None,
         episode_start: Optional[np.ndarray] = None,
         deterministic: bool = False,
     ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
         """
-        Get the policy action from an observation (and optional hidden state).
+        Get the policy action from an observation and mpc state (and optional hidden state).
         Includes sugar-coating to handle different observations (e.g. normalizing images).
 
         :param observation: the input observation
@@ -333,8 +333,12 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         callback.on_training_start(locals(), globals())
 
         assert self.env is not None
-        assert self.env.get_attr("mpc_state") is not None, "No MPC state was provided by the environment"
-        self._last_mpc_state = np.array(self.env.get_attr("mpc_state"))
+        try:
+            self.env.get_mpc_state()
+        except AttributeError:
+            raise ValueError("The environment must have a get_mpc_state method, make sure the environment is wrapped with VecMPCStateWrapper")
+        assert self.env.get_mpc_state() is not None, "No MPC state was provided by the environment"
+        self._last_mpc_state = self.env.get_mpc_state()
 
         while self.num_timesteps < total_timesteps:
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
