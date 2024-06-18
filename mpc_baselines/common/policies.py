@@ -37,7 +37,85 @@ from stable_baselines3.common.utils import get_device, is_vectorized_observation
 
 from mpc_baselines.common.utils import get_q_p_from_tensor
 from stable_baselines3.common.policies import BaseModel, BasePolicy
-class MPCActorCriticPolicy(BasePolicy):
+
+class MPCBasePolicy(BasePolicy):
+    """The base policy object.
+
+    Parameters are mostly the same as `BaseModel`; additions are documented below.
+
+    :param args: positional arguments passed through to `BaseModel`.
+    :param kwargs: keyword arguments passed through to `BaseModel`.
+    :param squash_output: For continuous actions, whether the output is squashed
+        or not using a ``tanh()`` function.
+    """
+
+    features_extractor: BaseFeaturesExtractor
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def predict(
+        self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        mpc_state: np.ndarray,
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
+        """
+        Get the policy action from an observation and mpc state (and optional hidden state).
+        Includes sugar-coating to handle different observations (e.g. normalizing images).
+
+        :param observation: the input observation
+        :param mpc_state: the input mpc state
+        :param state: The last hidden states (can be None, used in recurrent policies)
+        :param episode_start: The last masks (can be None, used in recurrent policies)
+            this correspond to beginning of episodes,
+            where the hidden states of the RNN must be reset.
+        :param deterministic: Whether or not to return deterministic actions.
+        :return: the model's action and the next hidden state
+            (used in recurrent policies)
+        """
+        # Switch to eval mode (this affects batch norm / dropout)
+        self.set_training_mode(False)
+
+        # Check for common mistake that the user does not mix Gym/VecEnv API
+        # Tuple obs are not supported by SB3, so we can safely do that check
+        if isinstance(observation, tuple) and len(observation) == 2 and isinstance(observation[1], dict):
+            raise ValueError(
+                "You have passed a tuple to the predict() function instead of a Numpy array or a Dict. "
+                "You are probably mixing Gym API with SB3 VecEnv API: `obs, info = env.reset()` (Gym) "
+                "vs `obs = vec_env.reset()` (SB3 VecEnv). "
+                "See related issue https://github.com/DLR-RM/stable-baselines3/issues/1694 "
+                "and documentation for more information: https://stable-baselines3.readthedocs.io/en/master/guide/vec_envs.html#vecenv-api-vs-gym-api"
+            )
+
+        obs_tensor, vectorized_env = self.obs_to_tensor(observation)
+        mpc_state_tensor = self.mpc_state_to_tensor(mpc_state)
+
+        with th.no_grad():
+            actions = self._predict(obs_tensor, mpc_state_tensor, deterministic=deterministic)
+        # Convert to numpy, and reshape to the original action shape
+        actions = actions.cpu().numpy().reshape((-1, *self.action_space.shape))  # type: ignore[misc]
+
+        if isinstance(self.action_space, spaces.Box):
+            if self.squash_output:
+                # Rescale to proper domain when using squashing
+                actions = self.unscale_action(actions)  # type: ignore[assignment, arg-type]
+            else:
+                # Actions could be on arbitrary scale, so clip the actions to avoid
+                # out of bound error (e.g. if sampling from a Gaussian distribution)
+                actions = np.clip(actions, self.action_space.low, self.action_space.high)  # type: ignore[assignment, arg-type]
+
+        # Remove batch dimension if needed
+        if not vectorized_env:
+            assert isinstance(actions, np.ndarray)
+            actions = actions.squeeze(axis=0)
+
+        return actions, state  # type: ignore[return-value]
+
+
+class MPCActorCriticPolicy(MPCBasePolicy):
     """
     Policy class for actor-critic algorithms (has both policy and value prediction).
     Used by A2C, PPO and the likes.
@@ -173,9 +251,6 @@ class MPCActorCriticPolicy(BasePolicy):
         self.use_sde = use_sde
         if dist_kwargs is None:
             dist_kwargs = {}
-
-        print(f"'mpc_state_dim': {self.mpc_state_dim}")
-        print(f"'mpc_horizon': {self.mpc_horizon}")
 
         dist_kwargs.update(
             {"mpc_state_dim" : self.mpc_state_dim,
@@ -320,18 +395,14 @@ class MPCActorCriticPolicy(BasePolicy):
 
     def mpc_state_to_tensor(self, mpc_state: np.ndarray) -> PyTorchObs:
         """
-        Convert an input observation to a PyTorch tensor that can be fed to a model.
-        Includes sugar-coating to handle different observations (e.g. normalizing images).
-
-        :param observation: the input observation
-        :return: The observation as PyTorch tensor
-            and whether the observation is vectorized or not
+        Convert an input mpc_state to a PyTorch tensor that can be fed to a model.
+        
+        :param mpc_state: the input mpc_state
+        :return: The mpc_state as PyTorch tensor
         """
-        mpc_state = np.array(mpc_state)
-
+        
         # Add batch dimension if needed
-        mpc_state = observation.reshape((-1, *(1, self.mpc_state_dim)))  # type: ignore[misc]
-
+        mpc_state = mpc_state.reshape((-1, self.mpc_state_dim))  # type: ignore[misc]
         mpc_state_tensor = obs_as_tensor(mpc_state, self.device)
         return mpc_state_tensor
 
@@ -392,12 +463,10 @@ class MPCActorCriticPolicy(BasePolicy):
         """
         QP = self.action_net(latent_pi)
         Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
-        # print(f'mpc_state: {self.mpc_state}')
-        # print(f'env_state: {self.env_state}')
 
         nominal_states, nominal_actions, nominal_objs = self.mpc_controller(mpc_state, QuadCost(Q, p), self.dynamics)
         mean_actions = nominal_actions[0]
-        # print(f'mean_actions: {mean_actions}'))
+        
         if isinstance(self.action_dist, MPCDiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
         # if isinstance(self.action_dist, DiagGaussianDistribution):

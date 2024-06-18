@@ -45,3 +45,25 @@ class MPCDictReplayBufferSamples(NamedTuple):
     next_observations: sb3_types.TensorDict
     dones: th.Tensor
     rewards: th.Tensor
+
+class MPCPolicyPredictor(Protocol):
+    def predict(
+        self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        mpc_state: np.ndarray,
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
+        """
+        Predict the action given an observation and an mpc state (and an optional hidden state)
+        Includes sugar-coating to handle different observations (e.g. normalizing images).
+
+        :param observation: The input observation
+        :param mpc_state: The input mpc state
+        :param state: The internal state of the model (used for RNNs)
+        :param episode_start: Whether the current step is the start of a new episode
+        :param deterministic: Whether to return deterministic action
+        :return: The predicted action and the internal state of the model
+        """
+        ...
