@@ -20,4 +20,4 @@ class VecMPCStateWrapper(VecEnvWrapper):
         return obs, rews, dones, infos
 
     def get_mpc_state(self) -> np.ndarray:
-         return np.array(self.env_method("get_mpc_state"))
+         return np.array(self.env_method("get_wrapper_attr", "mpc_state"))
