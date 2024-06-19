@@ -13,16 +13,8 @@ import torch as th
 from gymnasium import spaces
 from torch import nn
 
-from stable_baselines3.common.distributions import (
-    BernoulliDistribution,
-    CategoricalDistribution,
-    DiagGaussianDistribution,
-    Distribution,
-    MultiCategoricalDistribution,
-    StateDependentNoiseDistribution,
-    # make_proba_distribution,
-)
-from mpc_baselines.common.distributions import MPCDiagGaussianDistribution, make_proba_distribution
+from stable_baselines3.common.distributions import Distribution
+from mpc_baselines.common.distributions import MPCDiagGaussianDistribution, MPCStateDependentNoiseDistribution, make_proba_distribution
 from stable_baselines3.common.preprocessing import get_action_dim, is_image_space, maybe_transpose, preprocess_obs
 from stable_baselines3.common.torch_layers import (
     BaseFeaturesExtractor,
@@ -302,7 +294,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
 
         :param n_envs:
         """
-        assert isinstance(self.action_dist, StateDependentNoiseDistribution), "reset_noise() is only available when using gSDE"
+        assert isinstance(self.action_dist, MPCStateDependentNoiseDistribution), "reset_noise() is only available when using gSDE"
         self.action_dist.sample_weights(self.log_std, batch_size=n_envs)
 
     def _build_mlp_extractor(self) -> None:
@@ -329,8 +321,8 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             self.mpc_action_dim,
             self.mpc_horizon,
             eps=1e-2,
-            u_lower=th.tensor(self.action_space.low, device=self.device),
-            u_upper=th.tensor(self.action_space.high, device=self.device),
+            u_lower=th.tensor(self.action_space.low),
+            u_upper=th.tensor(self.action_space.high),
             lqr_iter=self.lqr_iter,
             u_init=self.u_init,
             exit_unconverged=False,
@@ -355,17 +347,10 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             self.action_net, self.log_std = self.action_dist.proba_distribution_net(
                 latent_dim=latent_dim_pi, log_std_init=self.log_std_init
             )
-        # TODO: add support for more distributions
-        # if isinstance(self.action_dist, DiagGaussianDistribution):
-        #     self.action_net, self.log_std = self.action_dist.proba_distribution_net(
-        #         latent_dim=latent_dim_pi, log_std_init=self.log_std_init
-        #     )
-        # elif isinstance(self.action_dist, StateDependentNoiseDistribution):
-        #     self.action_net, self.log_std = self.action_dist.proba_distribution_net(
-        #         latent_dim=latent_dim_pi, latent_sde_dim=latent_dim_pi, log_std_init=self.log_std_init
-        #     )
-        # elif isinstance(self.action_dist, (CategoricalDistribution, MultiCategoricalDistribution, BernoulliDistribution)):
-        #     self.action_net = self.action_dist.proba_distribution_net(latent_dim=latent_dim_pi)
+        elif isinstance(self.action_dist, MPCStateDependentNoiseDistribution):
+            self.action_net, self.log_std = self.action_dist.proba_distribution_net(
+                latent_dim=latent_dim_pi, latent_sde_dim=latent_dim_pi, log_std_init=self.log_std_init
+            )
         else:
             raise NotImplementedError(f"Unsupported distribution '{self.action_dist}'.")
 
@@ -472,19 +457,8 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         
         if isinstance(self.action_dist, MPCDiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
-        # if isinstance(self.action_dist, DiagGaussianDistribution):
-        #     return self.action_dist.proba_distribution(mean_actions, self.log_std)
-        # elif isinstance(self.action_dist, CategoricalDistribution):
-        #     # Here mean_actions are the logits before the softmax
-        #     return self.action_dist.proba_distribution(action_logits=mean_actions)
-        # elif isinstance(self.action_dist, MultiCategoricalDistribution):
-        #     # Here mean_actions are the flattened logits
-        #     return self.action_dist.proba_distribution(action_logits=mean_actions)
-        # elif isinstance(self.action_dist, BernoulliDistribution):
-        #     # Here mean_actions are the logits (before rounding to get the binary actions)
-        #     return self.action_dist.proba_distribution(action_logits=mean_actions)
-        # elif isinstance(self.action_dist, StateDependentNoiseDistribution):
-        #     return self.action_dist.proba_distribution(mean_actions, self.log_std, latent_pi)
+        elif isinstance(self.action_dist, MPCStateDependentNoiseDistribution):
+            return self.action_dist.proba_distribution(mean_actions, self.log_std, latent_pi)
         else:
             raise ValueError("Invalid action distribution")
 
