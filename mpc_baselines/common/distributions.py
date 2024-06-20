@@ -10,7 +10,8 @@ from torch import nn
 from torch.distributions import Bernoulli, Categorical, Normal
 
 from stable_baselines3.common.preprocessing import get_action_dim
-import stable_baselines3.common.distributions as sb3_distributions 
+import stable_baselines3.common.distributions as sb3_distributions
+from stable_baselines3.common.distributions import Distribution, TanhBijector
 
 SelfMPCDiagGaussianDistribution = TypeVar("SelfMPCDiagGaussianDistribution", bound="MPCDiagGaussianDistribution")
 SelfMPCSquashedDiagGaussianDistribution = TypeVar(
@@ -19,7 +20,7 @@ SelfMPCSquashedDiagGaussianDistribution = TypeVar(
 SelfMPCStateDependentNoiseDistribution = TypeVar("SelfMPCStateDependentNoiseDistribution", bound="MPCStateDependentNoiseDistribution")
 
 
-class MPCDiagGaussianDistribution(sb3_distributions.Distribution):
+class MPCDiagGaussianDistribution(Distribution):
     """
     Gaussian distribution with diagonal covariance matrix, for continuous actions.
 
@@ -131,7 +132,7 @@ class MPCSquashedDiagGaussianDistribution(MPCDiagGaussianDistribution):
         # We use numpy to avoid numerical instability
         if gaussian_actions is None:
             # It will be clipped to avoid NaN when inversing tanh
-            gaussian_actions = sb3_distributions.TanhBijector.inverse(actions)
+            gaussian_actions = TanhBijector.inverse(actions)
 
         # Log likelihood for a Gaussian distribution
         log_prob = super().log_prob(gaussian_actions)
@@ -369,7 +370,7 @@ class MPCStateDependentNoiseDistribution(Distribution):
 
 def make_proba_distribution(
     action_space: spaces.Space, use_sde: bool = False, use_mpc = True, dist_kwargs: Optional[Dict[str, Any]] = None
-) -> sb3_distributions.Distribution:
+) -> Distribution:
     """
     Return an instance of Distribution for the correct type of action space
 
