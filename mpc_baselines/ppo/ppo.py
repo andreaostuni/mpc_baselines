@@ -315,7 +315,7 @@ class MPCPPO(MPCOnPolicyAlgorithm):
         total_timesteps: int,
         callback: MaybeCallback = None,
         log_interval: int = 1,
-        tb_log_name: str = "PPO",
+        tb_log_name: str = "MPCPPO",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ) -> SelfMPCPPO:
