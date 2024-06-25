@@ -11,14 +11,14 @@ from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import get_parameters_by_name, polyak_update
-from stable_baselines3.sac.policies import Actor, CnnPolicy, MlpPolicy, MultiInputPolicy, SACPolicy
+from mpc_baselines.sac.policies import MPCActor, MPCCnnPolicy, MPCMlpPolicy, MPCMultiInputPolicy, MPCSACPolicy
 
-SelfSAC = TypeVar("SelfSAC", bound="SAC")
+SelfMPCSAC = TypeVar("SelfMPCSAC", bound="MPCSAC")
 
 
-class SAC(OffPolicyAlgorithm):
+class MPCSAC(OffPolicyAlgorithm):
     """
-    Soft Actor-Critic (SAC)
+    Soft Actor-Critic (SAC) with MPC (Model Predictive Control) algorithm.
     Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,
     This implementation borrows code from original implementation (https://github.com/haarnoja/sac)
     from OpenAI Spinning Up (https://github.com/openai/spinningup), from the softlearning repo
@@ -78,18 +78,18 @@ class SAC(OffPolicyAlgorithm):
     """
 
     policy_aliases: ClassVar[Dict[str, Type[BasePolicy]]] = {
-        "MlpPolicy": MlpPolicy,
-        "CnnPolicy": CnnPolicy,
-        "MultiInputPolicy": MultiInputPolicy,
+        "MPCMlpPolicy": MPCMlpPolicy,
+        "MPCCnnPolicy": MPCCnnPolicy,
+        "MPCMultiInputPolicy": MPCMultiInputPolicy,
     }
-    policy: SACPolicy
-    actor: Actor
+    policy: MPCSACPolicy
+    actor: MPCActor
     critic: ContinuousCritic
     critic_target: ContinuousCritic
 
     def __init__(
         self,
-        policy: Union[str, Type[SACPolicy]],
+        policy: Union[str, Type[MPCSACPolicy]],
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule] = 3e-4,
         buffer_size: int = 1_000_000,  # 1e6
@@ -296,14 +296,14 @@ class SAC(OffPolicyAlgorithm):
             self.logger.record("train/ent_coef_loss", np.mean(ent_coef_losses))
 
     def learn(
-        self: SelfSAC,
+        self: SelfMPCSAC,
         total_timesteps: int,
         callback: MaybeCallback = None,
         log_interval: int = 4,
-        tb_log_name: str = "SAC",
+        tb_log_name: str = "MPCSAC",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
-    ) -> SelfSAC:
+    ) -> SelfMPCSAC:
         return super().learn(
             total_timesteps=total_timesteps,
             callback=callback,

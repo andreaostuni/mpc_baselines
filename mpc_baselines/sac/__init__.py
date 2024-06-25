@@ -1,4 +1,4 @@
-from stable_baselines3.sac.policies import CnnPolicy, MlpPolicy, MultiInputPolicy
-from stable_baselines3.sac.sac import SAC
+from mpc_baselines.sac.policies import MPCCnnPolicy, MPCMlpPolicy, MPCMultiInputPolicy
+from mpc_baselines.sac.sac import MPCSAC
 
-__all__ = ["CnnPolicy", "MlpPolicy", "MultiInputPolicy", "SAC"]
+__all__ = ["MPCCnnPolicy", "MPCMlpPolicy", "MPCMultiInputPolicy", "MPCSAC"]

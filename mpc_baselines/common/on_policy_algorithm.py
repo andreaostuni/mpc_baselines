@@ -7,10 +7,8 @@ import torch as th
 from gymnasium import spaces
 
 from stable_baselines3.common.base_class import BaseAlgorithm
-from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutBuffer
 from mpc_baselines.common.buffers import MPCDictRolloutBuffer, MPCRolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean
 from stable_baselines3.common.vec_env import VecEnv
@@ -74,7 +72,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         max_grad_norm: float,
         use_sde: bool,
         sde_sample_freq: int,
-        rollout_buffer_class: Optional[Type[RolloutBuffer]] = None,
+        rollout_buffer_class: Optional[Type[MPCRolloutBuffer]] = None,
         rollout_buffer_kwargs: Optional[Dict[str, Any]] = None,
         stats_window_size: int = 100,
         tensorboard_log: Optional[str] = None,
@@ -147,11 +145,11 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         self,
         env: VecEnv,
         callback: BaseCallback,
-        rollout_buffer: RolloutBuffer,
+        rollout_buffer: MPCRolloutBuffer,
         n_rollout_steps: int,
     ) -> bool:
         """
-        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        Collect experiences using the current policy and fill a ``MPCRolloutBuffer``.
         The term rollout here refers to the model-free notion and should not
         be used with the concept of rollout used in model-based RL or planning.
 
@@ -341,7 +339,11 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         self._last_mpc_state = self.env.get_mpc_state()
 
         while self.num_timesteps < total_timesteps:
-            continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+            continue_training = self.collect_rollouts(
+                self.env,
+                callback,
+                self.rollout_buffer,
+                n_rollout_steps=self.n_steps)
 
             if not continue_training:
                 break
