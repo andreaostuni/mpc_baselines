@@ -121,6 +121,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
     :param dynamics: Dynamics model
     :param lqr_iter: Number of iterations for the LQR controller
     :param u_init: Initial action sequence for the MPC
+    :param grad_method: Method to compute the gradient of the MPC controller dynamics
     :param net_arch: The specification of the policy and value networks.
     :param activation_fn: Activation function
     :param ortho_init: Whether to use or not orthogonal initialization
@@ -229,7 +230,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
 
         self.log_std_init = log_std_init
         dist_kwargs = None
-        self.mpc_action_dim = action_space.shape[0]
+        self.mpc_action_dim = get_action_dim(action_space)
         
 
         assert not (squash_output and not use_sde), "squash_output=True is only available when using gSDE (use_sde=True)"
