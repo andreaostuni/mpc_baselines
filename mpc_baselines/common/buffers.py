@@ -102,7 +102,7 @@ class MPCReplayBuffer(BaseBuffer):
 
         if psutil is not None:
             total_memory_usage: float = (
-                self.observations.nbytes + self.mpc_states.nbytes,  self.actions.nbytes + self.rewards.nbytes + self.dones.nbytes
+                self.observations.nbytes + self.mpc_states.nbytes + self.actions.nbytes + self.rewards.nbytes + self.dones.nbytes
             )
 
             if not optimize_memory_usage:

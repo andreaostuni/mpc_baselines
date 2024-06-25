@@ -6,8 +6,7 @@ from gymnasium import spaces
 from torch import nn
 import numpy as np
 
-from stable_baselines3.common.distributions import SquashedDiagGaussianDistribution, StateDependentNoiseDistribution
-from mpc_baselines.common.distributions import MPCDiagGaussianDistribution, MPCStateDependentNoiseDistribution, MPCSquashedDiagGaussianDistribution
+from mpc_baselines.common.distributions import MPCStateDependentNoiseDistribution, MPCSquashedDiagGaussianDistribution
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
 from stable_baselines3.common.preprocessing import get_action_dim
 from stable_baselines3.common.torch_layers import (
@@ -19,7 +18,7 @@ from stable_baselines3.common.torch_layers import (
     get_actor_critic_arch,
 )
 from stable_baselines3.common.type_aliases import PyTorchObs, Schedule
-from stable_baselines3.common.utils import get_device
+from stable_baselines3.common.utils import get_device, obs_as_tensor
 
 # mpc_baselines
 from mpc_baselines.common.policies import MPCBasePolicy
@@ -86,13 +85,13 @@ class MPCActor(MPCBasePolicy):
         super().__init__(
             observation_space,
             action_space,
+            mpc_state_dim=mpc_state_dim,
             features_extractor=features_extractor,
             normalize_images=normalize_images,
             squash_output=True,
         )
 
         # Save arguments to re-create object at loading
-        self.mpc_state_dim = mpc_state_dim
         self.mpc_horizon = mpc_horizon
         self.lqr_iter = lqr_iter
         self.u_init = u_init
@@ -108,7 +107,6 @@ class MPCActor(MPCBasePolicy):
         self.clip_mean = clip_mean
         self.dynamics = dynamics
         self.mpc_controller = None
-        # self.mpc_action_dim = action_space.shape[0]
 
         self.action_dim = get_action_dim(self.action_space)
         latent_pi_net = create_mlp(features_dim, -1, net_arch, activation_fn)
@@ -128,14 +126,14 @@ class MPCActor(MPCBasePolicy):
             if clip_mean > 0.0:
                 self.action_net = nn.Sequential(self.action_net, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean))
         else:
-            self.action_dist = MPCSquashedDiagGaussianDistribution(action_dim, self.mpc_horizon)  # type: ignore[assignment]
+            self.action_dist = MPCSquashedDiagGaussianDistribution(self.action_dim, self.mpc_state_dim, self.mpc_horizon)  # type: ignore[assignment]
             self.action_net = nn.Linear(last_layer_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon)
 
-            self.log_std = nn.Linear(last_layer_dim, action_dim)  # type: ignore[assignment]
+            self.log_std = nn.Linear(last_layer_dim, self.action_dim)  # type: ignore[assignment]
         
         self.mpc_controller = MPC(
             self.mpc_state_dim,
-            self.mpc_action_dim,
+            self.action_dim,
             self.mpc_horizon,
             eps=1e-2,
             u_lower=th.tensor(self.action_space.low),
@@ -178,12 +176,12 @@ class MPCActor(MPCBasePolicy):
         Only useful when using gSDE.
         It corresponds to ``th.exp(log_std)`` in the normal case,
         but is slightly different when using ``expln`` function
-        (cf StateDependentNoiseDistribution doc).
+        (cf MPCStateDependentNoiseDistribution doc).
 
         :return:
         """
         msg = "get_std() is only available when using gSDE"
-        assert isinstance(self.action_dist, StateDependentNoiseDistribution), msg
+        assert isinstance(self.action_dist, MPCStateDependentNoiseDistribution), msg
         return self.action_dist.get_std(self.log_std)
 
     def reset_noise(self, batch_size: int = 1) -> None:
@@ -193,7 +191,7 @@ class MPCActor(MPCBasePolicy):
         :param batch_size:
         """
         msg = "reset_noise() is only available when using gSDE"
-        assert isinstance(self.action_dist, StateDependentNoiseDistribution), msg
+        assert isinstance(self.action_dist, MPCStateDependentNoiseDistribution), msg
         self.action_dist.sample_weights(self.log_std, batch_size=batch_size)
 
     def get_action_dist_params(self, obs: PyTorchObs, mpc_state: th.tensor) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
@@ -208,7 +206,7 @@ class MPCActor(MPCBasePolicy):
         features = self.extract_features(obs, self.features_extractor)
         latent_pi = self.latent_pi(features)
         QP = self.action_net(latent_pi)
-        Q, p = get_q_p_from_tensor(QP, self.mpc_action_dim, self.mpc_horizon)
+        Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
 
         nominal_states, nominal_actions, nominal_objs = self.mpc_controller(mpc_state, QuadCost(Q, p), self.dynamics)
         mean_actions = nominal_actions[0]
@@ -305,6 +303,7 @@ class MPCSACPolicy(MPCBasePolicy):
             features_extractor_class,
             features_extractor_kwargs,
             optimizer_class=optimizer_class,
+            mpc_state_dim=mpc_state_dim,
             optimizer_kwargs=optimizer_kwargs,
             squash_output=True,
             normalize_images=normalize_images,
@@ -430,11 +429,11 @@ class MPCSACPolicy(MPCBasePolicy):
         critic_kwargs = self._update_features_extractor(self.critic_kwargs, features_extractor)
         return ContinuousCritic(**critic_kwargs).to(self.device)
 
-    def forward(self, obs: PyTorchObs, deterministic: bool = False) -> th.Tensor:
-        return self._predict(obs, deterministic=deterministic)
+    def forward(self, obs: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False) -> th.Tensor:
+        return self._predict(obs, mpc_state, deterministic=deterministic)
 
-    def _predict(self, observation: PyTorchObs, deterministic: bool = False) -> th.Tensor:
-        return self.actor(observation, deterministic)
+    def _predict(self, observation: PyTorchObs, mpc_state: np.ndarray, deterministic: bool = False) -> th.Tensor:
+        return self.actor(observation, mpc_state, deterministic)
 
     def set_training_mode(self, mode: bool) -> None:
         """

@@ -43,7 +43,8 @@ class MPCBasePolicy(BasePolicy):
 
     features_extractor: BaseFeaturesExtractor
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, mpc_state_dim: int, **kwargs):
+        self.mpc_state_dim = mpc_state_dim
         super().__init__(*args, **kwargs)
 
     def predict(
@@ -105,6 +106,19 @@ class MPCBasePolicy(BasePolicy):
             actions = actions.squeeze(axis=0)
 
         return actions, state  # type: ignore[return-value]
+    
+    def mpc_state_to_tensor(self, mpc_state: np.ndarray) -> PyTorchObs:
+        """
+        Convert an input mpc_state to a PyTorch tensor that can be fed to a model.
+        
+        :param mpc_state: the input mpc_state
+        :return: The mpc_state as PyTorch tensor
+        """
+        
+        # Add batch dimension if needed
+        mpc_state = mpc_state.reshape((-1, self.mpc_state_dim))  # type: ignore[misc]
+        mpc_state_tensor = obs_as_tensor(mpc_state, self.device)
+        return mpc_state_tensor
 
 
 class MPCActorCriticPolicy(MPCBasePolicy):
@@ -178,7 +192,6 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             if optimizer_class == th.optim.Adam:
                 optimizer_kwargs["eps"] = 1e-5
         
-        self.mpc_state_dim = mpc_state_dim
         self.mpc_horizon = mpc_horizon
         self.lqr_iter = lqr_iter
         self.u_init = u_init
@@ -189,6 +202,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             action_space,
             features_extractor_class,
             features_extractor_kwargs,
+            mpc_state_dim=mpc_state_dim,
             optimizer_class=optimizer_class,
             optimizer_kwargs=optimizer_kwargs,
             squash_output=squash_output,
@@ -382,18 +396,6 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         # Setup optimizer with initial learning rate
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)  # type: ignore[call-arg]
 
-    def mpc_state_to_tensor(self, mpc_state: np.ndarray) -> PyTorchObs:
-        """
-        Convert an input mpc_state to a PyTorch tensor that can be fed to a model.
-        
-        :param mpc_state: the input mpc_state
-        :return: The mpc_state as PyTorch tensor
-        """
-        
-        # Add batch dimension if needed
-        mpc_state = mpc_state.reshape((-1, self.mpc_state_dim))  # type: ignore[misc]
-        mpc_state_tensor = obs_as_tensor(mpc_state, self.device)
-        return mpc_state_tensor
 
     def forward(self, obs: th.Tensor, mpc_state: th.tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """

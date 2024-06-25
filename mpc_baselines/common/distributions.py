@@ -111,11 +111,13 @@ class MPCSquashedDiagGaussianDistribution(MPCDiagGaussianDistribution):
     Gaussian distribution with diagonal covariance matrix, followed by a squashing function (tanh) to ensure bounds.
 
     :param action_dim: Dimension of the action space.
+    :param mpc_state_dim: Dimension of the mpc state space.
+    :param mpc_horizon: MPC horizon.
     :param epsilon: small value to avoid NaN due to numerical imprecision.
     """
 
-    def __init__(self, action_dim: int,  mpc_horizon: int, epsilon: float = 1e-6):
-        super().__init__(action_dim, mpc_horizon)
+    def __init__(self, action_dim: int, mpc_state_dim: int, mpc_horizon: int, epsilon: float = 1e-6):
+        super().__init__(action_dim, mpc_state_dim, mpc_horizon)
         # Avoid NaN (prevents division by zero or log of zero)
         self.epsilon = epsilon
         self.gaussian_actions: Optional[th.Tensor] = None

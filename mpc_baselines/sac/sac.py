@@ -5,9 +5,9 @@ import torch as th
 from gymnasium import spaces
 from torch.nn import functional as F
 
-from stable_baselines3.common.buffers import ReplayBuffer
+from mpc_baselines.common.buffers import MPCReplayBuffer
 from stable_baselines3.common.noise import ActionNoise
-from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
+from mpc_baselines.common.off_policy_algorithm import MPCOffPolicyAlgorithm 
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import get_parameters_by_name, polyak_update
@@ -16,7 +16,7 @@ from mpc_baselines.sac.policies import MPCActor, MPCCnnPolicy, MPCMlpPolicy, MPC
 SelfMPCSAC = TypeVar("SelfMPCSAC", bound="MPCSAC")
 
 
-class MPCSAC(OffPolicyAlgorithm):
+class MPCSAC(MPCOffPolicyAlgorithm):
     """
     Soft Actor-Critic (SAC) with MPC (Model Predictive Control) algorithm.
     Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,
@@ -32,6 +32,7 @@ class MPCSAC(OffPolicyAlgorithm):
 
     :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
     :param env: The environment to learn from (if registered in Gym, can be str)
+    :param mpc_state_dim: The dimension of the mpc state
     :param learning_rate: learning rate for adam optimizer,
         the same learning rate will be used for all networks (Q-Values, Actor and Value function)
         it can be a function of the current progress remaining (from 1 to 0)
@@ -91,6 +92,7 @@ class MPCSAC(OffPolicyAlgorithm):
         self,
         policy: Union[str, Type[MPCSACPolicy]],
         env: Union[GymEnv, str],
+        mpc_state_dim: int,
         learning_rate: Union[float, Schedule] = 3e-4,
         buffer_size: int = 1_000_000,  # 1e6
         learning_starts: int = 100,
@@ -100,7 +102,7 @@ class MPCSAC(OffPolicyAlgorithm):
         train_freq: Union[int, Tuple[int, str]] = 1,
         gradient_steps: int = 1,
         action_noise: Optional[ActionNoise] = None,
-        replay_buffer_class: Optional[Type[ReplayBuffer]] = None,
+        replay_buffer_class: Optional[Type[MPCReplayBuffer]] = None,
         replay_buffer_kwargs: Optional[Dict[str, Any]] = None,
         optimize_memory_usage: bool = False,
         ent_coef: Union[str, float] = "auto",
@@ -120,6 +122,7 @@ class MPCSAC(OffPolicyAlgorithm):
         super().__init__(
             policy,
             env,
+            mpc_state_dim,
             learning_rate,
             buffer_size,
             learning_starts,
@@ -219,7 +222,7 @@ class MPCSAC(OffPolicyAlgorithm):
                 self.actor.reset_noise()
 
             # Action by the current actor for the sampled state
-            actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
+            actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations, replay_data.mpc_states)
             log_prob = log_prob.reshape(-1, 1)
 
             ent_coef_loss = None
@@ -244,7 +247,7 @@ class MPCSAC(OffPolicyAlgorithm):
 
             with th.no_grad():
                 # Select action according to policy
-                next_actions, next_log_prob = self.actor.action_log_prob(replay_data.next_observations)
+                next_actions, next_log_prob = self.actor.action_log_prob(replay_data.next_observations, replay_data.mpc_states)
                 # Compute the next Q values: min over all critics targets
                 next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
                 next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)

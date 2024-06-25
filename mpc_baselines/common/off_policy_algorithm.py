@@ -506,8 +506,8 @@ class MPCOffPolicyAlgorithm(BaseAlgorithm):
         replay_buffer.add(
             self._last_original_obs,  # type: ignore[arg-type]
             next_obs,  # type: ignore[arg-type]
-            mpc_state,
             buffer_action,
+            mpc_state,
             reward_,
             dones,
             infos,
