@@ -62,7 +62,6 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         self,
         policy: Union[str, Type[MPCActorCriticPolicy]],
         env: Union[GymEnv, str],
-        mpc_state_dim: int,
         learning_rate: Union[float, Schedule],
         n_steps: int,
         gamma: float,
@@ -72,6 +71,7 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
         max_grad_norm: float,
         use_sde: bool,
         sde_sample_freq: int,
+        mpc_state_dim: Union[int, None] = None,
         rollout_buffer_class: Optional[Type[MPCRolloutBuffer]] = None,
         rollout_buffer_kwargs: Optional[Dict[str, Any]] = None,
         stats_window_size: int = 100,
@@ -116,6 +116,8 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
             self._setup_model()
 
     def _setup_model(self) -> None:
+        if self.mpc_state_dim is None: 
+           self.mpc_state_dim = self.env.get_mpc_state_dim()
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
 

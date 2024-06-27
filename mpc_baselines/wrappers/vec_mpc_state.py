@@ -21,3 +21,8 @@ class VecMPCStateWrapper(VecEnvWrapper):
 
     def get_mpc_state(self) -> np.ndarray:
          return np.array(self.env_method("get_wrapper_attr", "mpc_state"))
+    
+    def get_mpc_state_dim(self) -> int:
+            # verify that all environments have the same mpc_state_dim
+            assert len(set(self.env_method("get_wrapper_attr", "mpc_state_dim"))) == 1
+            return self.env_method("get_wrapper_attr", "mpc_state_dim")[0]

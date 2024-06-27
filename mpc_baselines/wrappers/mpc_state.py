@@ -21,14 +21,23 @@ class MPCStateWrapper(gym.Wrapper):
     :param env: Gym env to wrap.
     """
 
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
+    def __init__(self, env: gym.Env,**kwargs):
+        super().__init__(env,**kwargs)
 
     @abstractmethod
     def _get_mpc_state(self) -> np.ndarray:
         # override this method to get the mpc state
         raise NotImplementedError
     
+    @abstractmethod
+    def _get_mpc_state_dim(self) -> int:
+        # override this method to get the mpc state dimension
+        raise NotImplementedError
+    
     @property
     def mpc_state(self) -> np.ndarray:
         return self._get_mpc_state().astype(np.float32)
+    
+    @property
+    def mpc_state_dim(self) -> int:
+        return self._get_mpc_state_dim()

@@ -81,8 +81,8 @@ class MPCOffPolicyAlgorithm(BaseAlgorithm):
         self,
         policy: Union[str, Type[BasePolicy]],
         env: Union[GymEnv, str],
-        mpc_state_dim: int,
         learning_rate: Union[float, Schedule],
+        mpc_state_dim: Union[int, None] = None,
         buffer_size: int = 1_000_000,  # 1e6
         learning_starts: int = 100,
         batch_size: int = 256,
@@ -173,6 +173,8 @@ class MPCOffPolicyAlgorithm(BaseAlgorithm):
             self.train_freq = TrainFreq(*train_freq)  # type: ignore[assignment,arg-type]
 
     def _setup_model(self) -> None:
+        if self.mpc_state_dim is None: 
+           self.mpc_state_dim = self.env.get_mpc_state_dim()
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
 

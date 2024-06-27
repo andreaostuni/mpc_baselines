@@ -17,3 +17,6 @@ class PendulumMPCWrapper(MPCStateWrapper):
         
     def _get_mpc_state(self):
         return np.array([self.angle_normalize(self.env.unwrapped.state.copy()[0]), self.env.unwrapped.state.copy()[1]])
+    
+    def _get_mpc_state_dim(self):
+        return 2

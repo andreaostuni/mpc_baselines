@@ -66,7 +66,6 @@ class MPCReplayBuffer(BaseBuffer):
         handle_timeout_termination: bool = True,
     ):
         super().__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
-
         # Adjust buffer size
         self.buffer_size = max(buffer_size // n_envs, 1)
 
@@ -143,7 +142,6 @@ class MPCReplayBuffer(BaseBuffer):
             self.observations[(self.pos + 1) % self.buffer_size] = np.array(next_obs)
         else:
             self.next_observations[self.pos] = np.array(next_obs)
-
         self.actions[self.pos] = np.array(action)
         self.mpc_states[self.pos] = np.array(mpc_state)
         self.rewards[self.pos] = np.array(reward)

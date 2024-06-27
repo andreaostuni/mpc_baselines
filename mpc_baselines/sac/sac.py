@@ -92,7 +92,7 @@ class MPCSAC(MPCOffPolicyAlgorithm):
         self,
         policy: Union[str, Type[MPCSACPolicy]],
         env: Union[GymEnv, str],
-        mpc_state_dim: int,
+        mpc_state_dim: Union[int, None] = None,
         learning_rate: Union[float, Schedule] = 3e-4,
         buffer_size: int = 1_000_000,  # 1e6
         learning_starts: int = 100,
@@ -122,8 +122,8 @@ class MPCSAC(MPCOffPolicyAlgorithm):
         super().__init__(
             policy,
             env,
-            mpc_state_dim,
             learning_rate,
+            mpc_state_dim,
             buffer_size,
             learning_starts,
             batch_size,
