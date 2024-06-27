@@ -71,7 +71,7 @@ class MPCActor(MPCBasePolicy):
         features_extractor: nn.Module,
         features_dim: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 5,
+        lqr_iter: int = 50,
         u_init: Optional[th.Tensor] = None, # Time x Batch x Action
         grad_method: Optional[GradMethods] = GradMethods.ANALYTIC,
         activation_fn: Type[nn.Module] = nn.ReLU,
@@ -141,7 +141,7 @@ class MPCActor(MPCBasePolicy):
             lqr_iter=self.lqr_iter,
             u_init=self.u_init,
             exit_unconverged=False,
-            detach_unconverged=False,
+            detach_unconverged=True,
             backprop=False,
             grad_method=self.grad_method,
         ).to(get_device(self.device))

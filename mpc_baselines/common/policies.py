@@ -168,7 +168,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 5,
+        lqr_iter: int = 50,
         u_init: Optional[th.Tensor] = None, # Time x Batch x Action
         grad_method: Optional[GradMethods] = GradMethods.ANALYTIC,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
@@ -341,7 +341,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             lqr_iter=self.lqr_iter,
             u_init=self.u_init,
             exit_unconverged=False,
-            detach_unconverged=False,
+            detach_unconverged=True,
             backprop=False,
             grad_method=self.grad_method,
         ).to(get_device(self.device))
@@ -570,7 +570,7 @@ class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 10,
+        lqr_iter: int = 50,
         u_init: Optional[th.Tensor] = None, # Time x Batch x Action
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
@@ -659,7 +659,7 @@ class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 10,
+        lqr_iter: int = 50,
         u_init: Optional[th.Tensor] = None, # Time x Batch x Action        
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
