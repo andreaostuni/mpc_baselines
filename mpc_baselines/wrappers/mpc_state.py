@@ -22,7 +22,7 @@ class MPCStateWrapper(gym.Wrapper):
     """
 
     def __init__(self, env: gym.Env,**kwargs):
-        super().__init__(env,**kwargs)
+        super().__init__(env)
 
     @abstractmethod
     def _get_mpc_state(self) -> np.ndarray:

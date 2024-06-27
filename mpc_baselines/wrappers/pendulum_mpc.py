@@ -12,7 +12,7 @@ class PendulumMPCWrapper(MPCStateWrapper):
 
     def __init__(self, env = 'Pendulum-v1', **kwargs):
         if isinstance(env, str):
-            env = gym.make(env).unwrapped
+            env = gym.make(env,**kwargs).unwrapped
         super().__init__(env, **kwargs)
         
     def _get_mpc_state(self):
