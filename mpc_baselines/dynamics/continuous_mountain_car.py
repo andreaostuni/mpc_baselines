@@ -15,11 +15,11 @@ class MountainCarDynamics(torch.nn.Module):
               force = torch.clamp(action, -1, 1)
 
               # dynamics
-              velocity += force * power - 0.0025 * torch.cos(3 * position)
+              velocity = velocity + force * power - 0.0025 * torch.cos(3 * position)
               velocity = torch.clamp(velocity, -0.07, 0.07)
-              position += velocity
+              position = position + velocity
               position = torch.clamp(position, -1.2, 0.6)
-              if (position == -1.2 and velocity < 0): velocity = 0
+              velocity = torch.where(position == -1.2, torch.tensor(0.0).to(position.device), velocity)
               state = torch.cat((position, velocity), dim=1)
               return state
        
