@@ -2,7 +2,7 @@ from .mpc_state import MPCStateWrapper
 import gymnasium as gym
 import numpy as np
 
-class MountainCarContinuosMPC(MPCStateWrapper):
+class MountainCarContinuousMPC(MPCStateWrapper):
     """
     MountainCarContinuous environment with MPCStateWrapper
     """
