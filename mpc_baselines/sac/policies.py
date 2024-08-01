@@ -22,7 +22,7 @@ from stable_baselines3.common.utils import get_device, obs_as_tensor
 
 # mpc_baselines
 from mpc_baselines.common.policies import MPCBasePolicy
-from mpc_baselines.common.utils import get_q_p_from_tensor
+from mpc_baselines.common.utils import get_q_p_from_tensor, ScaledSigmoid
 
 # CAP the standard deviation of the actor
 LOG_STD_MAX = 2
@@ -127,7 +127,7 @@ class MPCActor(MPCBasePolicy):
                 self.action_net = nn.Sequential(self.action_net, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean))
         else:
             self.action_dist = MPCSquashedDiagGaussianDistribution(self.action_dim, self.mpc_state_dim, self.mpc_horizon)  # type: ignore[assignment]
-            self.action_net = nn.Linear(last_layer_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon)
+            self.action_net = nn.Sequential(nn.Linear(last_layer_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon), ScaledSigmoid(max_val=100000.0, min_val=.1))
 
             self.log_std = nn.Linear(last_layer_dim, self.action_dim)  # type: ignore[assignment]
         

@@ -12,6 +12,7 @@ from torch.distributions import Bernoulli, Categorical, Normal
 from stable_baselines3.common.preprocessing import get_action_dim
 import stable_baselines3.common.distributions as sb3_distributions
 from stable_baselines3.common.distributions import Distribution, TanhBijector
+from mpc_baselines.common.utils import ScaledSigmoid
 
 SelfMPCDiagGaussianDistribution = TypeVar("SelfMPCDiagGaussianDistribution", bound="MPCDiagGaussianDistribution")
 SelfMPCSquashedDiagGaussianDistribution = TypeVar(
@@ -47,7 +48,7 @@ class MPCDiagGaussianDistribution(Distribution):
         :param log_std_init: Initial value for the log standard deviation
         :return:
         """
-        QP = nn.Linear(latent_dim, 2* (self.action_dim + self.mpc_state_dim) * self.mpc_horizon)
+        QP = nn.Sequential(nn.Linear(latent_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon), ScaledSigmoid(max_val=100000.0, min_val=.1))
         # TODO: allow action dependent std
         log_std = nn.Parameter(th.ones(self.action_dim) * log_std_init, requires_grad=True)
         return QP, log_std
@@ -279,7 +280,7 @@ class MPCStateDependentNoiseDistribution(Distribution):
         :return:
         """
         # Network for the cost matrix of the MPC problem
-        QP = nn.Linear(latent_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon)
+        QP = nn.Sequential(nn.Linear(latent_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon), ScaledSigmoid(max_val=100000.0, min_val=.1) )
         # When we learn features for the noise, the feature dimension
         # can be different between the policy and the noise network
         self.latent_sde_dim = latent_dim if latent_sde_dim is None else latent_sde_dim

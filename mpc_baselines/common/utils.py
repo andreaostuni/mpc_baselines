@@ -11,7 +11,9 @@ import cloudpickle
 import gymnasium as gym
 import numpy as np
 import torch as th
+import torch.nn as nn
 from gymnasium import spaces
+import warnings 
 
 import stable_baselines3 as sb3
 
@@ -49,3 +51,65 @@ def get_q_p_from_tensor(tensor: th.Tensor, timestamps: int) -> Tuple[th.Tensor, 
     p = p.permute(1, 0, 2)
     
     return Q, p
+
+
+class ScaledSigmoid(nn.Module):
+    r"""Applies the Sigmoid function element-wise and scales the output between an interval [a, b].
+
+    .. math::
+        \text{Sigmoid}(x) = \sigma(x) = \frac{1}{1 + \exp(-x)}
+        \text{ScaledSigmoid}(x) =  
+
+    Shape:
+        - Input: :math:`(*)`, where :math:`*` means any number of dimensions.
+        - Output: :math:`(*)`, same shape as the input.
+
+    .. image:: ../scripts/activation_images/ScaledSigmoid.png
+
+    Examples::
+
+        >>> m = nn.ScaledSigmoid(-2,2)
+        >>> input = torch.randn(2)
+        >>> output = m(input)
+    """
+
+    # def forward(self, input: th.Tensor) -> th.Tensor:
+    #     return th.sigmoid(input)
+    
+    __constants__ = ['min_val', 'max_val']
+
+    min_val: float
+    max_val: float
+
+    def __init__(
+        self,
+        min_val: float = 0.,
+        max_val: float = 1.,
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None
+    ) -> None:
+        super().__init__()
+        if min_value is not None:
+            warnings.warn(
+                "keyword argument `min_value` is deprecated and rename to `min_val`",
+                FutureWarning,
+                stacklevel=2,
+            )
+            min_val = min_value
+        if max_value is not None:
+            warnings.warn(
+                "keyword argument `max_value` is deprecated and rename to `max_val`",
+                FutureWarning,
+                stacklevel=2,
+            )
+            max_val = max_value
+
+        self.min_val = min_val
+        self.max_val = max_val
+        assert self.max_val > self.min_val
+
+    def forward(self, input: th.Tensor) -> th.Tensor:
+        return th.sigmoid(input) * (self.max_val - self.min_val) + self.min_val
+
+    def extra_repr(self) -> str:
+        return f'min_val={self.min_val}, max_val={self.max_val}'
