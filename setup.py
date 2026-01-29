@@ -23,6 +23,7 @@ a set of reliable implementations of reinforcement learning algorithms in PyTorc
 
 It implements the MPC policies for the following algorithms:
 - [PPO] (https://stable-baselines3.readthedocs.io/en/master/modules/ppo.html)
+- [SAC] (https://stable-baselines3.readthedocs.io/en/master/modules/sac.html)
 
 ```python
 import gymnasium
