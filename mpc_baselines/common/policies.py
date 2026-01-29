@@ -14,8 +14,17 @@ from gymnasium import spaces
 from torch import nn
 
 from stable_baselines3.common.distributions import Distribution
-from mpc_baselines.common.distributions import MPCDiagGaussianDistribution, MPCStateDependentNoiseDistribution, make_proba_distribution
-from stable_baselines3.common.preprocessing import get_action_dim, is_image_space, maybe_transpose, preprocess_obs
+from mpc_baselines.common.distributions import (
+    MPCDiagGaussianDistribution,
+    MPCStateDependentNoiseDistribution,
+    make_proba_distribution,
+)
+from stable_baselines3.common.preprocessing import (
+    get_action_dim,
+    is_image_space,
+    maybe_transpose,
+    preprocess_obs,
+)
 from stable_baselines3.common.torch_layers import (
     BaseFeaturesExtractor,
     CombinedExtractor,
@@ -25,10 +34,15 @@ from stable_baselines3.common.torch_layers import (
     create_mlp,
 )
 from stable_baselines3.common.type_aliases import PyTorchObs, Schedule
-from stable_baselines3.common.utils import get_device, is_vectorized_observation, obs_as_tensor
+from stable_baselines3.common.utils import (
+    get_device,
+    is_vectorized_observation,
+    obs_as_tensor,
+)
 
 from mpc_baselines.common.utils import get_q_p_from_tensor
 from stable_baselines3.common.policies import BaseModel, BasePolicy
+
 
 class MPCBasePolicy(BasePolicy):
     """The base policy object.
@@ -74,7 +88,11 @@ class MPCBasePolicy(BasePolicy):
 
         # Check for common mistake that the user does not mix Gym/VecEnv API
         # Tuple obs are not supported by SB3, so we can safely do that check
-        if isinstance(observation, tuple) and len(observation) == 2 and isinstance(observation[1], dict):
+        if (
+            isinstance(observation, tuple)
+            and len(observation) == 2
+            and isinstance(observation[1], dict)
+        ):
             raise ValueError(
                 "You have passed a tuple to the predict() function instead of a Numpy array or a Dict. "
                 "You are probably mixing Gym API with SB3 VecEnv API: `obs, info = env.reset()` (Gym) "
@@ -87,7 +105,9 @@ class MPCBasePolicy(BasePolicy):
         mpc_state_tensor = self.mpc_state_to_tensor(mpc_state)
 
         with th.no_grad():
-            actions = self._predict(obs_tensor, mpc_state_tensor, deterministic=deterministic)
+            actions = self._predict(
+                obs_tensor, mpc_state_tensor, deterministic=deterministic
+            )
         # Convert to numpy, and reshape to the original action shape
         actions = actions.cpu().numpy().reshape((-1, *self.action_space.shape))  # type: ignore[misc]
 
@@ -106,15 +126,15 @@ class MPCBasePolicy(BasePolicy):
             actions = actions.squeeze(axis=0)
 
         return actions, state  # type: ignore[return-value]
-    
+
     def mpc_state_to_tensor(self, mpc_state: np.ndarray) -> PyTorchObs:
         """
         Convert an input mpc_state to a PyTorch tensor that can be fed to a model.
-        
+
         :param mpc_state: the input mpc_state
         :return: The mpc_state as PyTorch tensor
         """
-        
+
         # Add batch dimension if needed
         mpc_state = mpc_state.reshape((-1, self.mpc_state_dim))  # type: ignore[misc]
         mpc_state_tensor = obs_as_tensor(mpc_state, self.device)
@@ -133,7 +153,6 @@ class MPCActorCriticPolicy(MPCBasePolicy):
     :param mpc_state_dim: Dimension of the MPC state
     :param mpc_horizon: Horizon of the MPC
     :param dynamics: Dynamics model
-    :param lqr_iter: Number of iterations for the LQR controller
     :param u_init: Initial action sequence for the MPC
     :param grad_method: Method to compute the gradient of the MPC controller dynamics
     :param net_arch: The specification of the policy and value networks.
@@ -168,9 +187,16 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 50,
-        u_init: Optional[th.Tensor] = None, # Time x Batch x Action
+        u_init: Optional[th.Tensor] = None,  # Time x Batch x Action
         grad_method: Optional[GradMethods] = GradMethods.ANALYTIC,
+        mpc_eps: float = 1e-2,
+        exit_unconverged: bool = False,
+        detach_unconverged: bool = True,
+        mpc_lqr_iter_override: Optional[int] = None,
+        mpc_batch_chunk: Optional[int] = None,
+        mpc_q_min: float = 1e-3,
+        mpc_q_max: float = 1e5,
+        mpc_p_scale: float = 1e5,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -191,11 +217,19 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             # Small values to avoid NaN in Adam optimizer
             if optimizer_class == th.optim.Adam:
                 optimizer_kwargs["eps"] = 1e-5
-        
+
         self.mpc_horizon = mpc_horizon
-        self.lqr_iter = lqr_iter
         self.u_init = u_init
         self.grad_method = grad_method
+        self.mpc_eps = mpc_eps
+        self.exit_unconverged = exit_unconverged
+        self.detach_unconverged = detach_unconverged
+        self.mpc_lqr_iter_override = mpc_lqr_iter_override
+        self.mpc_batch_chunk = mpc_batch_chunk
+        self.mpc_q_min = mpc_q_min
+        self.mpc_q_max = mpc_q_max
+        self.mpc_p_scale = mpc_p_scale
+        self._prev_ctrl: Optional[th.Tensor] = None
 
         super().__init__(
             observation_space,
@@ -205,11 +239,14 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             mpc_state_dim=mpc_state_dim,
             optimizer_class=optimizer_class,
             optimizer_kwargs=optimizer_kwargs,
-            squash_output=squash_output,
             normalize_images=normalize_images,
         )
 
-        if isinstance(net_arch, list) and len(net_arch) > 0 and isinstance(net_arch[0], dict):
+        if (
+            isinstance(net_arch, list)
+            and len(net_arch) > 0
+            and isinstance(net_arch[0], dict)
+        ):
             warnings.warn(
                 (
                     "As shared layers in the mlp_extractor are removed since SB3 v1.8.0, "
@@ -236,6 +273,7 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         self.features_extractor = self.make_features_extractor()
         self.features_dim = self.features_extractor.features_dim
         if self.share_features_extractor:
+            # Re-use the same extractor for both heads when sharing is enabled
             self.pi_features_extractor = self.features_extractor
             self.vf_features_extractor = self.features_extractor
         else:
@@ -245,9 +283,10 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         self.log_std_init = log_std_init
         dist_kwargs = None
         self.mpc_action_dim = get_action_dim(action_space)
-        
 
-        assert not (squash_output and not use_sde), "squash_output=True is only available when using gSDE (use_sde=True)"
+        assert not (
+            squash_output and not use_sde
+        ), "squash_output=True is only available when using gSDE (use_sde=True)"
         # Keyword arguments for gSDE distribution
         if use_sde:
             dist_kwargs = {
@@ -262,14 +301,15 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             dist_kwargs = {}
 
         dist_kwargs.update(
-            {"mpc_state_dim" : self.mpc_state_dim,
-             "mpc_horizon" : self.mpc_horizon}
-            )
-        
+            {"mpc_state_dim": self.mpc_state_dim, "mpc_horizon": self.mpc_horizon}
+        )
+
         self.dist_kwargs = dist_kwargs
 
         # Action distribution
-        self.action_dist = make_proba_distribution(action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
+        self.action_dist = make_proba_distribution(
+            action_space, use_sde=use_sde, dist_kwargs=dist_kwargs
+        )
 
         self._build(lr_schedule)
 
@@ -293,12 +333,19 @@ class MPCActorCriticPolicy(MPCBasePolicy):
                 optimizer_kwargs=self.optimizer_kwargs,
                 features_extractor_class=self.features_extractor_class,
                 features_extractor_kwargs=self.features_extractor_kwargs,
-                mpc_state_dim = self.mpc_state_dim,
-                mpc_horizon = self.mpc_horizon,
-                lqr_iter = self.lqr_iter,
-                u_init = self.u_init,
-                dynamics = self.dynamics,
-                grad_method = self.grad_method
+                mpc_state_dim=self.mpc_state_dim,
+                mpc_horizon=self.mpc_horizon,
+                u_init=self.u_init,
+                dynamics=self.dynamics,
+                grad_method=self.grad_method,
+                mpc_eps=self.mpc_eps,
+                exit_unconverged=self.exit_unconverged,
+                detach_unconverged=self.detach_unconverged,
+                mpc_lqr_iter_override=self.mpc_lqr_iter_override,
+                mpc_batch_chunk=self.mpc_batch_chunk,
+                mpc_q_min=self.mpc_q_min,
+                mpc_q_max=self.mpc_q_max,
+                mpc_p_scale=self.mpc_p_scale,
             )
         )
         return data
@@ -309,7 +356,9 @@ class MPCActorCriticPolicy(MPCBasePolicy):
 
         :param n_envs:
         """
-        assert isinstance(self.action_dist, MPCStateDependentNoiseDistribution), "reset_noise() is only available when using gSDE"
+        assert isinstance(
+            self.action_dist, MPCStateDependentNoiseDistribution
+        ), "reset_noise() is only available when using gSDE"
         self.action_dist.sample_weights(self.log_std, batch_size=n_envs)
 
     def _build_mlp_extractor(self) -> None:
@@ -331,17 +380,20 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         """
         Create the MPC controller.
         """
+        u_init = (
+            self.u_init.to(get_device(self.device)) if self.u_init is not None else None
+        )
         self.mpc_controller = MPC(
             self.mpc_state_dim,
             self.mpc_action_dim,
             self.mpc_horizon,
-            eps=1e-2,
+            eps=self.mpc_eps,
             u_lower=th.tensor(self.action_space.low),
             u_upper=th.tensor(self.action_space.high),
-            lqr_iter=self.lqr_iter,
-            u_init=self.u_init,
-            exit_unconverged=False,
-            detach_unconverged=True,
+            lqr_iter=self.mpc_lqr_iter_override,
+            u_init=u_init,
+            exit_unconverged=self.exit_unconverged,
+            detach_unconverged=self.detach_unconverged,
             backprop=False,
             grad_method=self.grad_method,
         ).to(get_device(self.device))
@@ -364,7 +416,9 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             )
         elif isinstance(self.action_dist, MPCStateDependentNoiseDistribution):
             self.action_net, self.log_std = self.action_dist.proba_distribution_net(
-                latent_dim=latent_dim_pi, latent_sde_dim=latent_dim_pi, log_std_init=self.log_std_init
+                latent_dim=latent_dim_pi,
+                latent_sde_dim=latent_dim_pi,
+                log_std_init=self.log_std_init,
             )
         else:
             raise NotImplementedError(f"Unsupported distribution '{self.action_dist}'.")
@@ -396,8 +450,9 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         # Setup optimizer with initial learning rate
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)  # type: ignore[call-arg]
 
-
-    def forward(self, obs: th.Tensor, mpc_state: th.tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+    def forward(
+        self, obs: th.Tensor, mpc_state: th.tensor, deterministic: bool = False
+    ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
         Forward pass in all the networks (actor and critic)
 
@@ -422,7 +477,9 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         return actions, values, log_prob
 
     def extract_features(  # type: ignore[override]
-        self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
+        self,
+        obs: PyTorchObs,
+        features_extractor: Optional[BaseFeaturesExtractor] = None,
     ) -> Union[th.Tensor, Tuple[th.Tensor, th.Tensor]]:
         """
         Preprocess the observation if needed and extract features.
@@ -433,7 +490,14 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             features for the actor and the features for the critic.
         """
         if self.share_features_extractor:
-            return super().extract_features(obs, self.features_extractor if features_extractor is None else features_extractor)
+            return super().extract_features(
+                obs,
+                (
+                    self.features_extractor
+                    if features_extractor is None
+                    else features_extractor
+                ),
+            )
         else:
             if features_extractor is not None:
                 warnings.warn(
@@ -445,27 +509,67 @@ class MPCActorCriticPolicy(MPCBasePolicy):
             vf_features = super().extract_features(obs, self.vf_features_extractor)
             return pi_features, vf_features
 
-    def _get_action_dist_from_latent(self, latent_pi: th.Tensor, mpc_state: th.tensor) -> Distribution:
+    def _get_action_dist_from_latent(
+        self, latent_pi: th.Tensor, mpc_state: th.tensor
+    ) -> Distribution:
         """
         Retrieve action distribution given the latent codes.
 
         :param latent_pi: Latent code for the actor
         :return: Action distribution
         """
-        QP = self.action_net(latent_pi)
-        Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
+        # Warm start MPC with the previous nominal control sequence if available
+        self.mpc_controller.prev_ctrl = self._prev_ctrl
 
-        nominal_states, nominal_actions, nominal_objs = self.mpc_controller(mpc_state, QuadCost(Q, p), self.dynamics)
+        QP = self.action_net(latent_pi)
+        Q_raw, p_raw = get_q_p_from_tensor(QP, self.mpc_horizon)
+
+        # Clamp/scale Q diagonals and p to keep solver stable
+        q_min = float(self.mpc_q_min)
+        q_max = float(self.mpc_q_max)
+        Q_diag = th.clamp(th.diagonal(Q_raw, dim1=-2, dim2=-1), min=q_min, max=q_max)
+        Q = th.diag_embed(Q_diag)
+        p = th.tanh(p_raw) * float(self.mpc_p_scale)
+
+        # Optional batch chunking to avoid oversized batched solves
+        if self.mpc_batch_chunk is not None and Q.shape[1] > self.mpc_batch_chunk:
+            states_out = []
+            actions_out = []
+            objs_out = []
+            for start in range(0, Q.shape[1], self.mpc_batch_chunk):
+                end = min(start + self.mpc_batch_chunk, Q.shape[1])
+                ns, na, no = self.mpc_controller(
+                    mpc_state[start:end],
+                    QuadCost(Q[:, start:end], p[:, start:end]),
+                    self.dynamics,
+                )
+                states_out.append(ns)
+                actions_out.append(na)
+                objs_out.append(no)
+            nominal_states = th.cat(states_out, dim=1)
+            nominal_actions = th.cat(actions_out, dim=1)
+            nominal_objs = th.cat(objs_out, dim=1)
+        else:
+            nominal_states, nominal_actions, nominal_objs = self.mpc_controller(
+                mpc_state, QuadCost(Q, p), self.dynamics
+            )
+
+        # Cache for next call to reduce solver iterations
+        self._prev_ctrl = nominal_actions.detach()
         mean_actions = nominal_actions[0]
-        
+
         if isinstance(self.action_dist, MPCDiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
         elif isinstance(self.action_dist, MPCStateDependentNoiseDistribution):
-            return self.action_dist.proba_distribution(mean_actions, self.log_std, latent_pi)
+            return self.action_dist.proba_distribution(
+                mean_actions, self.log_std, latent_pi
+            )
         else:
             raise ValueError("Invalid action distribution")
 
-    def _predict(self, observation: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self, observation: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False
+    ) -> th.Tensor:
         """
         Get the action according to the policy for a given observation.
 
@@ -474,9 +578,13 @@ class MPCActorCriticPolicy(MPCBasePolicy):
         :param deterministic: Whether to use stochastic or deterministic actions
         :return: Taken action according to the policy
         """
-        return self.get_distribution(observation, mpc_state).get_actions(deterministic=deterministic)
+        return self.get_distribution(observation, mpc_state).get_actions(
+            deterministic=deterministic
+        )
 
-    def evaluate_actions(self, obs: PyTorchObs, mpc_state: th.tensor, actions: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+    def evaluate_actions(
+        self, obs: PyTorchObs, mpc_state: th.tensor, actions: th.Tensor
+    ) -> Tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
         """
         Evaluate actions according to the current policy,
         given the observations.
@@ -536,7 +644,6 @@ class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):
     :param mpc_state_dim: Dimension of the MPC state
     :param mpc_horizon: Horizon of the MPC
     :param dynamics: Dynamics model
-    :param lqr_iter: Number of iterations for the LQR controller
     :param u_init: Initial action sequence for the MPC
     :param net_arch: The specification of the policy and value networks.
     :param activation_fn: Activation function
@@ -570,8 +677,10 @@ class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 50,
-        u_init: Optional[th.Tensor] = None, # Time x Batch x Action
+        u_init: Optional[th.Tensor] = None,  # Time x Batch x Action
+        mpc_eps: float = 1e-2,
+        exit_unconverged: bool = False,
+        detach_unconverged: bool = True,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -594,8 +703,10 @@ class MPCActorCriticCnnPolicy(MPCActorCriticPolicy):
             mpc_state_dim,
             mpc_horizon,
             dynamics,
-            lqr_iter,
             u_init,
+            mpc_eps,
+            exit_unconverged,
+            detach_unconverged,
             net_arch,
             activation_fn,
             ortho_init,
@@ -625,7 +736,6 @@ class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
     :param mpc_state_dim: Dimension of the MPC state
     :param mpc_horizon: Horizon of the MPC
     :param dynamics: Dynamics model
-    :param lqr_iter: Number of iterations for the LQR controller
     :param u_init: Initial action sequence for the MPC
     :param net_arch: The specification of the policy and value networks.
     :param activation_fn: Activation function
@@ -659,8 +769,10 @@ class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 50,
-        u_init: Optional[th.Tensor] = None, # Time x Batch x Action        
+        u_init: Optional[th.Tensor] = None,  # Time x Batch x Action
+        mpc_eps: float = 1e-2,
+        exit_unconverged: bool = False,
+        detach_unconverged: bool = True,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -683,8 +795,10 @@ class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
             mpc_state_dim,
             mpc_horizon,
             dynamics,
-            lqr_iter,
             u_init,
+            mpc_eps,
+            exit_unconverged,
+            detach_unconverged,
             net_arch,
             activation_fn,
             ortho_init,
@@ -700,6 +814,7 @@ class MPCMultiInputActorCriticPolicy(MPCActorCriticPolicy):
             optimizer_class,
             optimizer_kwargs,
         )
+
 
 MPCMlpPolicy = MPCActorCriticPolicy
 MPCCnnPolicy = MPCActorCriticCnnPolicy

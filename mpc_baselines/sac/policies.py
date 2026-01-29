@@ -6,7 +6,10 @@ from gymnasium import spaces
 from torch import nn
 import numpy as np
 
-from mpc_baselines.common.distributions import MPCStateDependentNoiseDistribution, MPCSquashedDiagGaussianDistribution
+from mpc_baselines.common.distributions import (
+    MPCStateDependentNoiseDistribution,
+    MPCSquashedDiagGaussianDistribution,
+)
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
 from stable_baselines3.common.preprocessing import get_action_dim
 from stable_baselines3.common.torch_layers import (
@@ -43,7 +46,6 @@ class MPCActor(MPCBasePolicy):
     :param features_dim: Number of features
     :param mpc_horizon: Horizon of the MPC controller
     :param dynamics: Dynamics model
-    :param lqr_iter: Number of iterations for the LQR solver
     :param u_init: Initial action for the MPC controller
     :param grad_method: Gradient method for the MPC controller dynamics
     :param activation_fn: Activation function
@@ -71,8 +73,7 @@ class MPCActor(MPCBasePolicy):
         features_extractor: nn.Module,
         features_dim: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 50,
-        u_init: Optional[th.Tensor] = None, # Time x Batch x Action
+        u_init: Optional[th.Tensor] = None,  # Time x Batch x Action
         grad_method: Optional[GradMethods] = GradMethods.ANALYTIC,
         activation_fn: Type[nn.Module] = nn.ReLU,
         use_sde: bool = False,
@@ -93,7 +94,8 @@ class MPCActor(MPCBasePolicy):
 
         # Save arguments to re-create object at loading
         self.mpc_horizon = mpc_horizon
-        self.lqr_iter = lqr_iter
+        # Fixed default iterations for the MPC solver
+        self.lqr_iter = 50
         self.u_init = u_init
         self.grad_method = grad_method
         self.use_sde = use_sde
@@ -115,22 +117,37 @@ class MPCActor(MPCBasePolicy):
 
         if self.use_sde:
             self.action_dist = MPCStateDependentNoiseDistribution(
-                self.action_dim, mpc_state_dim, mpc_horizon, full_std=full_std,
-                  use_expln=use_expln, learn_features=True, squash_output=True
+                self.action_dim,
+                mpc_state_dim,
+                mpc_horizon,
+                full_std=full_std,
+                use_expln=use_expln,
+                learn_features=True,
+                squash_output=True,
             )
             self.action_net, self.log_std = self.action_dist.proba_distribution_net(
-                latent_dim=last_layer_dim, latent_sde_dim=last_layer_dim, log_std_init=log_std_init
+                latent_dim=last_layer_dim,
+                latent_sde_dim=last_layer_dim,
+                log_std_init=log_std_init,
             )
             # Avoid numerical issues by limiting the mean of the Gaussian
             # to be in [-clip_mean, clip_mean]
             if clip_mean > 0.0:
-                self.action_net = nn.Sequential(self.action_net, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean))
+                self.action_net = nn.Sequential(
+                    self.action_net, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean)
+                )
         else:
             self.action_dist = MPCSquashedDiagGaussianDistribution(self.action_dim, self.mpc_state_dim, self.mpc_horizon)  # type: ignore[assignment]
-            self.action_net = nn.Sequential(nn.Linear(last_layer_dim, 2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon), ScaledSigmoid(max_val=100000.0, min_val=.1))
+            self.action_net = nn.Sequential(
+                nn.Linear(
+                    last_layer_dim,
+                    2 * (self.action_dim + self.mpc_state_dim) * self.mpc_horizon,
+                ),
+                ScaledSigmoid(max_val=100000.0, min_val=0.1),
+            )
 
             self.log_std = nn.Linear(last_layer_dim, self.action_dim)  # type: ignore[assignment]
-        
+
         self.mpc_controller = MPC(
             self.mpc_state_dim,
             self.action_dim,
@@ -160,12 +177,12 @@ class MPCActor(MPCBasePolicy):
                 use_expln=self.use_expln,
                 features_extractor=self.features_extractor,
                 clip_mean=self.clip_mean,
-                mpc_state_dim = self.mpc_state_dim,
-                mpc_horizon = self.mpc_horizon,
-                lqr_iter = self.lqr_iter,
-                u_init = self.u_init,
-                dynamics = self.dynamics,
-                grad_method = self.grad_method
+                mpc_state_dim=self.mpc_state_dim,
+                mpc_horizon=self.mpc_horizon,
+                lqr_iter=self.lqr_iter,
+                u_init=self.u_init,
+                dynamics=self.dynamics,
+                grad_method=self.grad_method,
             )
         )
         return data
@@ -194,7 +211,9 @@ class MPCActor(MPCBasePolicy):
         assert isinstance(self.action_dist, MPCStateDependentNoiseDistribution), msg
         self.action_dist.sample_weights(self.log_std, batch_size=batch_size)
 
-    def get_action_dist_params(self, obs: PyTorchObs, mpc_state: th.tensor) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
+    def get_action_dist_params(
+        self, obs: PyTorchObs, mpc_state: th.tensor
+    ) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
         """
         Get the parameters for the action distribution.
 
@@ -208,7 +227,9 @@ class MPCActor(MPCBasePolicy):
         QP = self.action_net(latent_pi)
         Q, p = get_q_p_from_tensor(QP, self.mpc_horizon)
 
-        nominal_states, nominal_actions, nominal_objs = self.mpc_controller(mpc_state, QuadCost(Q, p), self.dynamics)
+        nominal_states, nominal_actions, nominal_objs = self.mpc_controller(
+            mpc_state, QuadCost(Q, p), self.dynamics
+        )
         mean_actions = nominal_actions[0]
 
         if self.use_sde:
@@ -219,17 +240,28 @@ class MPCActor(MPCBasePolicy):
         log_std = th.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
         return mean_actions, log_std, {}
 
-    def forward(self, obs: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False) -> th.Tensor:
+    def forward(
+        self, obs: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False
+    ) -> th.Tensor:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs, mpc_state)
         # Note: the action is squashed
-        return self.action_dist.actions_from_params(mean_actions, log_std, deterministic=deterministic, **kwargs)
+        return self.action_dist.actions_from_params(
+            mean_actions, log_std, deterministic=deterministic, **kwargs
+        )
 
-    def action_log_prob(self, obs: PyTorchObs, mpc_state: th.tensor) -> Tuple[th.Tensor, th.Tensor]:
+    def action_log_prob(
+        self, obs: PyTorchObs, mpc_state: th.tensor
+    ) -> Tuple[th.Tensor, th.Tensor]:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs, mpc_state)
         # return action and associated log prob
         return self.action_dist.log_prob_from_params(mean_actions, log_std, **kwargs)
 
-    def _predict(self, observation: PyTorchObs, mpc_state: np.ndarray, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self,
+        observation: PyTorchObs,
+        mpc_state: np.ndarray,
+        deterministic: bool = False,
+    ) -> th.Tensor:
         return self(observation, mpc_state, deterministic)
 
 
@@ -243,7 +275,6 @@ class MPCSACPolicy(MPCBasePolicy):
     :param mpc_state_dim: Dimension of the MPC state
     :param mpc_horizon: Horizon of the MPC
     :param dynamics: Dynamics model
-    :param lqr_iter: Number of iterations for the LQR controller
     :param u_init: Initial action sequence for the MPC
     :param grad_method: Method to compute the gradient of the MPC controller dynamics
     :param net_arch: The specification of the policy and value networks.
@@ -280,8 +311,7 @@ class MPCSACPolicy(MPCBasePolicy):
         mpc_state_dim: int,
         mpc_horizon: int,
         dynamics: Union[LinDx, nn.Module],
-        lqr_iter: int = 5,
-        u_init: Optional[th.Tensor] = None, # Time x Batch x Action
+        u_init: Optional[th.Tensor] = None,  # Time x Batch x Action
         grad_method: Optional[GradMethods] = GradMethods.ANALYTIC,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
         activation_fn: Type[nn.Module] = nn.ReLU,
@@ -332,12 +362,11 @@ class MPCSACPolicy(MPCBasePolicy):
             "clip_mean": clip_mean,
         }
         mpc_kwargs = {
-            'mpc_state_dim': mpc_state_dim,
-            'mpc_horizon': mpc_horizon,
-            'dynamics': dynamics,
-            'lqr_iter': lqr_iter,
-            'u_init': u_init,
-            'grad_method': grad_method
+            "mpc_state_dim": mpc_state_dim,
+            "mpc_horizon": mpc_horizon,
+            "dynamics": dynamics,
+            "u_init": u_init,
+            "grad_method": grad_method,
         }
         self.actor_kwargs.update(sde_kwargs)
         self.actor_kwargs.update(mpc_kwargs)
@@ -363,10 +392,16 @@ class MPCSACPolicy(MPCBasePolicy):
         )
 
         if self.share_features_extractor:
-            self.critic = self.make_critic(features_extractor=self.actor.features_extractor)
+            self.critic = self.make_critic(
+                features_extractor=self.actor.features_extractor
+            )
             # Do not optimize the shared features extractor with the critic loss
             # otherwise, there are gradient computation issues
-            critic_parameters = [param for name, param in self.critic.named_parameters() if "features_extractor" not in name]
+            critic_parameters = [
+                param
+                for name, param in self.critic.named_parameters()
+                if "features_extractor" not in name
+            ]
         else:
             # Create a separate features extractor for the critic
             # this requires more memory and computation
@@ -403,12 +438,11 @@ class MPCSACPolicy(MPCBasePolicy):
                 optimizer_kwargs=self.optimizer_kwargs,
                 features_extractor_class=self.features_extractor_class,
                 features_extractor_kwargs=self.features_extractor_kwargs,
-                mpc_state_dim = self.actor_kwargs['mpc_state_dim'],
-                mpc_horizon = self.actor_kwargs['mpc_horizon'],
-                dynamics = self.actor_kwargs['dynamics'],
-                lqr_iter = self.actor_kwargs['lqr_iter'],
-                u_init = self.actor_kwargs['u_init'],
-                grad_method = self.actor_kwargs['grad_method']
+                mpc_state_dim=self.actor_kwargs["mpc_state_dim"],
+                mpc_horizon=self.actor_kwargs["mpc_horizon"],
+                dynamics=self.actor_kwargs["dynamics"],
+                u_init=self.actor_kwargs["u_init"],
+                grad_method=self.actor_kwargs["grad_method"],
             )
         )
         return data
@@ -421,18 +455,33 @@ class MPCSACPolicy(MPCBasePolicy):
         """
         self.actor.reset_noise(batch_size=batch_size)
 
-    def make_actor(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> MPCActor:
-        actor_kwargs = self._update_features_extractor(self.actor_kwargs, features_extractor)
+    def make_actor(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> MPCActor:
+        actor_kwargs = self._update_features_extractor(
+            self.actor_kwargs, features_extractor
+        )
         return MPCActor(**actor_kwargs).to(self.device)
 
-    def make_critic(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> ContinuousCritic:
-        critic_kwargs = self._update_features_extractor(self.critic_kwargs, features_extractor)
+    def make_critic(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> ContinuousCritic:
+        critic_kwargs = self._update_features_extractor(
+            self.critic_kwargs, features_extractor
+        )
         return ContinuousCritic(**critic_kwargs).to(self.device)
 
-    def forward(self, obs: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False) -> th.Tensor:
+    def forward(
+        self, obs: PyTorchObs, mpc_state: th.tensor, deterministic: bool = False
+    ) -> th.Tensor:
         return self._predict(obs, mpc_state, deterministic=deterministic)
 
-    def _predict(self, observation: PyTorchObs, mpc_state: np.ndarray, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self,
+        observation: PyTorchObs,
+        mpc_state: np.ndarray,
+        deterministic: bool = False,
+    ) -> th.Tensor:
         return self.actor(observation, mpc_state, deterministic)
 
     def set_training_mode(self, mode: bool) -> None:

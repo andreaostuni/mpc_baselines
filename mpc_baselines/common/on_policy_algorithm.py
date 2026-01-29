@@ -246,6 +246,12 @@ class MPCOnPolicyAlgorithm(BaseAlgorithm):
             self._last_mpc_state = new_mpc_states  # type: ignore[assignment]
             self._last_episode_starts = dones
 
+            # Reset MPC warm-start when an episode ends to avoid leaking across episodes
+            if hasattr(self.policy, "_prev_ctrl"):
+                reset_mask = th.as_tensor(dones, device=self.policy.device, dtype=th.bool)
+                if reset_mask.any():
+                    self.policy._prev_ctrl = None
+
         with th.no_grad():
             # Compute value for the last timestep
             values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))  # type: ignore[arg-type]

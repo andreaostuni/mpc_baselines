@@ -48,13 +48,15 @@ for i in range(1000):
 ```
 
 
-"""  
+"""
 setup(
     name="mpc-baselines",
-    packages=[package for package in find_packages() if package.startswith("mpc_baselines")],
+    packages=[
+        package for package in find_packages() if package.startswith("mpc_baselines")
+    ],
     package_data={"mpc_baselines": ["py.typed", "version.txt"]},
     install_requires=[
-        "gymnasium>=0.28.1,<0.30",
+        "gymnasium>=0.28.0",
         "numpy>=1.20",
         "torch>=1.13",
         # For saving models
@@ -100,15 +102,13 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     version=__version__,
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     # PyPI package information.
     project_urls={
         "Code": "https://github.com/andreaostuni/mpc-baselines",
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
     ],
